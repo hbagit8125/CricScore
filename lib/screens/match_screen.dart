@@ -92,7 +92,7 @@ class MatchScreen extends StatelessWidget {
                 match.battingTeam!.oversPlayed,
                 style: GoogleFonts.poppins(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
               ),
-              Text("CRR: ${(match.battingTeam!.totalRuns / (match.battingTeam!.ballsFaced/6 + 0.1)).toStringAsFixed(2)}", style: GoogleFonts.poppins(color: Colors.white70)),
+              Text("CRR: ${match.currentRunRate.toStringAsFixed(2)}", style: GoogleFonts.poppins(color: Colors.white70)),
             ],
           )
         ],
@@ -188,6 +188,25 @@ class MatchScreen extends StatelessWidget {
   }
 
   Widget _buildControlPanel(BuildContext context, MatchProvider match) {
+    if (match.isAllOut) {
+      return Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          decoration: BoxDecoration(
+            color: Colors.red.shade50,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Text(
+            "${match.battingTeam!.name} all out for ${match.battingTeam!.totalRuns}",
+            textAlign: TextAlign.center,
+            style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.red.shade900),
+          ),
+        ),
+      );
+    }
+
     if (match.isOverComplete) {
        return Padding(
         padding: const EdgeInsets.all(16.0),
@@ -264,12 +283,10 @@ class MatchScreen extends StatelessWidget {
 
   void _selectNewBatsman(BuildContext context, MatchProvider match) {
     // Determine which players are available (not out and not currently batting)
-    final availablePlayers = match.battingTeam!.players.where((p) => !p.isOut && p != match.currentNonStriker).toList();
+    final availablePlayers = match.availableBatsmen;
 
-    if (availablePlayers.isEmpty) {
-       // All out logic
-       return;
-    }
+    // All out: the control panel shows the innings summary instead.
+    if (match.isAllOut || availablePlayers.isEmpty) return;
 
     showDialog(
       context: context,
