@@ -26,6 +26,14 @@ final class ByWickets extends WinMargin {
   final int? ballsRemaining;
 }
 
+/// The winner batted once and still scored more than the loser's two
+/// innings.
+final class ByInningsAndRuns extends WinMargin {
+  const ByInningsAndRuns(this.runs);
+
+  final int runs;
+}
+
 /// Won the super over (or the last of several).
 final class BySuperOver extends WinMargin {
   const BySuperOver();
@@ -60,6 +68,8 @@ final class Win extends MatchResult {
       ByWickets(:final wickets, :final ballsRemaining) =>
         'won by $wickets ${wickets == 1 ? 'wicket' : 'wickets'}'
             '${ballsRemaining == null || ballsRemaining == 0 ? '' : ' ($ballsRemaining ${ballsRemaining == 1 ? 'ball' : 'balls'} left)'}',
+      ByInningsAndRuns(:final runs) =>
+        'won by an innings and $runs ${runs == 1 ? 'run' : 'runs'}',
       BySuperOver() => 'won the super over',
       ByBoundaryCount(:final winner, :final loser) =>
         'won on boundary count ($winner to $loser)',
@@ -73,6 +83,14 @@ final class Tie extends MatchResult {
 
   @override
   String describe(MatchSetup setup) => 'Match tied';
+}
+
+/// Time ran out in a two-innings match.
+final class Draw extends MatchResult {
+  const Draw();
+
+  @override
+  String describe(MatchSetup setup) => 'Match drawn';
 }
 
 final class NoResult extends MatchResult {

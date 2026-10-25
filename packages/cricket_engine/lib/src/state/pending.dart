@@ -37,6 +37,20 @@ final class ChooseBatter extends PendingQuestion {
   final bool atStrikersEnd;
 }
 
+/// The side batting first leads by at least the follow-on margin and may
+/// make the other side bat again straight away (Law 14).
+final class ChooseFollowOn extends PendingQuestion {
+  const ChooseFollowOn({
+    required this.leadingTeamId,
+    required this.trailingTeamId,
+    required this.lead,
+  });
+
+  final String leadingTeamId;
+  final String trailingTeamId;
+  final int lead;
+}
+
 enum BowlerIneligibility {
   /// Would bowl more consecutive overs than allowed (Law 17.6).
   bowledPreviousOver,

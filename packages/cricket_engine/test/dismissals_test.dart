@@ -258,6 +258,20 @@ void main() {
       expect(m.inn.batter('A1')!.runs, 4);
     });
 
+    test('both ends empty at once: two batters come in, one at a time', () {
+      m = m
+          .apply(out(DismissalKind.bowled, 'A1'))
+          .apply(const Retired('A2', out: false));
+      expect(m.inn.strikerId, isNull);
+      expect(m.inn.nonStrikerId, isNull);
+      expect((m.state.pending.single as ChooseBatter).atStrikersEnd, isTrue);
+      m = m.apply(const BatterIn('A3'));
+      expect((m.state.pending.single as ChooseBatter).atStrikersEnd, isFalse);
+      m = m.apply(const BatterIn('A4')).apply(const Delivery.runs(1));
+      expect(m.inn.partnerships.last.batterIds, ['A3', 'A4']);
+      expect(m.inn.partnerships.last.runs, 1);
+    });
+
     test('retired out counts as a wicket, not to the bowler', () {
       m = m.apply(const Retired('A2', out: true));
       expect(m.inn.wickets, 1);

@@ -10,6 +10,7 @@ MatchSetup setupFor(MatchRules rules, {bool lionsBatFirst = true}) {
       for (var i = 1; i <= rules.playersPerSide; i++)
         PlayerRef(id: '$prefix$i', name: '$prefix$i'),
     ],
+    substitutes: [PlayerRef(id: '${prefix}S', name: '${prefix}S')],
   );
   return MatchSetup(
     rules: rules,

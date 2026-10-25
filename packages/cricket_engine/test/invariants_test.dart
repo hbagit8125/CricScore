@@ -29,6 +29,7 @@ Match simulate(MatchRules rules, int seed) {
           eligible.isEmpty
               ? const EndInnings()
               : BowlerSelected(pick(eligible)),
+        ChooseFollowOn() => FollowOn(enforce: rng.nextBool()),
       };
     } else {
       event = _randomPlay(m, rng, pick);
@@ -44,7 +45,23 @@ Match simulate(MatchRules rules, int seed) {
 
 MatchEvent _randomPlay(Match m, Random rng, T Function<T>(List<T>) pick) {
   final inn = m.inn;
+  final rules = m.setup.rules;
   final roll = rng.nextDouble();
+  if (rules.isTwoInnings) {
+    if (roll < 0.004 && inn.legalBalls > 60) return const Declare();
+    if (m.events.length > 2500 && roll < 0.01) return const Drawn();
+  }
+  if (roll > 0.997) {
+    return PenaltyRuns(teamId: pick([m.setup.teamA.id, m.setup.teamB.id]));
+  }
+  if (roll > 0.995) {
+    final team = pick([m.setup.teamA, m.setup.teamB]);
+    return Substitute(
+      outPlayerId: pick(team.players).id,
+      inPlayerId: team.substitutes.first.id,
+      reason: SubstitutionReason.concussion,
+    );
+  }
   if (roll < 0.004) return Retired(inn.strikerId!, out: rng.nextBool());
   if (roll < 0.006 && inn.nonStrikerId != null) {
     return RunOutBeforeDelivery(inn.nonStrikerId!);
@@ -121,14 +138,17 @@ void checkInvariants(Match m) {
       reason: '$where: balls faced = legal balls + no-balls',
     );
     expect(
-      deliveries.fold(0, (s, d) => s + d.totalRuns),
+      deliveries.fold(0, (s, d) => s + d.totalRuns) + inn.extras.penalty,
       inn.runs,
-      reason: '$where: over-by-over runs add up',
+      reason: '$where: over-by-over runs plus penalties add up',
     );
     expect(
       inn.partnerships.fold(0, (s, p) => s + p.runs),
-      inn.runs,
-      reason: '$where: partnerships add up',
+      allOf(
+        lessThanOrEqualTo(inn.runs),
+        greaterThanOrEqualTo(inn.runs - inn.extras.penalty),
+      ),
+      reason: '$where: partnerships account for everything but penalties',
     );
     expect(
       inn.wickets,
@@ -195,6 +215,12 @@ void main() {
       noBallRuns: 2,
       freeHitAfterNoBall: true,
     ),
+    MatchRules.test,
+    MatchRules.firstClass.copyWith(playersPerSide: 6),
+    MatchRules.custom(
+      overs: 10,
+      playersPerSide: 7,
+    ).copyWith(inningsPerSide: 2, followOnMargin: 30),
   ];
 
   for (final rules in variants) {

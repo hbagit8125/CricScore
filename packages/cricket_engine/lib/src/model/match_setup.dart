@@ -49,7 +49,7 @@ final class MatchSetup {
         );
       }
       final names = <String>{};
-      for (final p in team.players) {
+      for (final p in team.squad) {
         if (p.name.trim().isEmpty) {
           problems.add('${team.name} has a player with no name.');
         }
@@ -58,7 +58,7 @@ final class MatchSetup {
         }
       }
     }
-    final ids = [...teamA.players, ...teamB.players].map((p) => p.id).toList();
+    final ids = [...teamA.squad, ...teamB.squad].map((p) => p.id).toList();
     if (ids.toSet().length != ids.length) {
       problems.add('Every player needs a unique id across both teams.');
     }

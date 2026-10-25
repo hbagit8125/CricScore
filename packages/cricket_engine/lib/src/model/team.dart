@@ -22,11 +22,20 @@ final class TeamSheet {
     required this.id,
     required this.name,
     required List<PlayerRef> players,
-  }) : players = List.unmodifiable(players);
+    List<PlayerRef> substitutes = const [],
+  }) : players = List.unmodifiable(players),
+       substitutes = List.unmodifiable(substitutes);
 
   final String id;
   final String name;
   final List<PlayerRef> players;
+
+  /// Named substitutes who may replace a player during the match
+  /// (concussion replacement, impact player). They can also field.
+  final List<PlayerRef> substitutes;
+
+  /// Playing side and substitutes.
+  Iterable<PlayerRef> get squad => [...players, ...substitutes];
 
   bool hasPlayer(String playerId) => players.any((p) => p.id == playerId);
 

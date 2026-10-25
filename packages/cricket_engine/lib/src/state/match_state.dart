@@ -1,3 +1,4 @@
+import '../model/events.dart';
 import '../model/match_setup.dart';
 import 'innings_state.dart';
 import 'pending.dart';
@@ -10,6 +11,7 @@ final class MatchState {
     required this.innings,
     required this.pending,
     required this.result,
+    this.substitutions = const [],
   });
 
   final MatchSetup setup;
@@ -21,6 +23,9 @@ final class MatchState {
   /// them. Empty when play can continue or the match is over.
   final List<PendingQuestion> pending;
   final MatchResult? result;
+
+  /// Substitutions made so far, in order.
+  final List<Substitute> substitutions;
 
   bool get isComplete => result != null;
 
