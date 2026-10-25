@@ -108,6 +108,30 @@ final class RunOutBeforeDelivery extends MatchEvent {
   int get hashCode => batterId.hashCode;
 }
 
+/// The umpire called "over" before the full number of legal balls. The
+/// over stands as called (Law 17.5).
+final class OverCalledEarly extends MatchEvent {
+  const OverCalledEarly();
+
+  @override
+  bool operator ==(Object other) => other is OverCalledEarly;
+
+  @override
+  int get hashCode => (OverCalledEarly).hashCode;
+}
+
+/// The umpire allowed one more ball in the over just completed, which
+/// stands (Law 17.5). Recorded straight after the over's last ball.
+final class OverExtended extends MatchEvent {
+  const OverExtended();
+
+  @override
+  bool operator ==(Object other) => other is OverExtended;
+
+  @override
+  int get hashCode => (OverExtended).hashCode;
+}
+
 /// Shortened innings or a revised target after an interruption, as
 /// supplied by the officials (for example from a DLS calculation).
 ///
@@ -142,6 +166,116 @@ final class EndInnings extends MatchEvent {
 
   @override
   int get hashCode => (EndInnings).hashCode;
+}
+
+/// The batting side declares its innings closed (Law 15.1). Two-innings
+/// matches only.
+final class Declare extends MatchEvent {
+  const Declare();
+
+  @override
+  bool operator ==(Object other) => other is Declare;
+
+  @override
+  int get hashCode => (Declare).hashCode;
+}
+
+/// The batting side forfeits the innings before it starts (Law 15.2).
+/// Two-innings matches only.
+final class Forfeit extends MatchEvent {
+  const Forfeit();
+
+  @override
+  bool operator ==(Object other) => other is Forfeit;
+
+  @override
+  int get hashCode => (Forfeit).hashCode;
+}
+
+/// The side that batted first decides whether to enforce the follow-on
+/// (Law 14).
+final class FollowOn extends MatchEvent {
+  const FollowOn({required this.enforce});
+
+  final bool enforce;
+
+  @override
+  bool operator ==(Object other) =>
+      other is FollowOn && other.enforce == enforce;
+
+  @override
+  int get hashCode => enforce.hashCode;
+}
+
+/// The follow-on margin set by the officials when playing time has been
+/// lost, based on the days left (Law 14.1.3). Recorded before the second
+/// innings ends.
+final class FollowOnMarginSet extends MatchEvent {
+  const FollowOnMarginSet(this.runs);
+
+  final int runs;
+
+  @override
+  bool operator ==(Object other) =>
+      other is FollowOnMarginSet && other.runs == runs;
+
+  @override
+  int get hashCode => runs.hashCode;
+}
+
+/// Time ran out in a two-innings match without a result (Law 16.3.2).
+final class Drawn extends MatchEvent {
+  const Drawn();
+
+  @override
+  bool operator ==(Object other) => other is Drawn;
+
+  @override
+  int get hashCode => (Drawn).hashCode;
+}
+
+/// Penalty runs awarded to a side (Law 41), usually 5.
+///
+/// Added to that side's innings in progress; otherwise to its most recent
+/// completed innings, or to its next innings if it has not batted yet.
+final class PenaltyRuns extends MatchEvent {
+  const PenaltyRuns({required this.teamId, this.runs = 5});
+
+  final String teamId;
+  final int runs;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PenaltyRuns && other.teamId == teamId && other.runs == runs;
+
+  @override
+  int get hashCode => Object.hash(teamId, runs);
+}
+
+enum SubstitutionReason { concussion, impactPlayer, other }
+
+/// A named substitute replaces a player for the rest of the match. The
+/// replaced player can no longer bat or bowl.
+final class Substitute extends MatchEvent {
+  const Substitute({
+    required this.outPlayerId,
+    required this.inPlayerId,
+    required this.reason,
+  });
+
+  final String outPlayerId;
+  final String inPlayerId;
+  final SubstitutionReason reason;
+
+  @override
+  bool operator ==(Object other) =>
+      other is Substitute &&
+      other.outPlayerId == outPlayerId &&
+      other.inPlayerId == inPlayerId &&
+      other.reason == reason;
+
+  @override
+  int get hashCode => Object.hash(outPlayerId, inPlayerId, reason);
 }
 
 /// The match is abandoned without a result.

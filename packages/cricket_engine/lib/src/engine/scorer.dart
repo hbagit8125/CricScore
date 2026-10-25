@@ -15,6 +15,9 @@ import 'errors.dart';
 /// Internal and mutable; [MatchState] snapshots are what callers see.
 final class Scorer {
   Scorer(this.setup) {
+    for (final team in [setup.teamA, setup.teamB]) {
+      _roster[team.id] = [for (final p in team.players) p.id];
+    }
     _startInnings(
       kind: InningsKind.regular,
       battingTeamId: setup.battingFirstTeamId,
@@ -26,6 +29,19 @@ final class Scorer {
   final List<_Innings> _innings = [];
   MatchResult? _result;
 
+  /// Who is playing for each side now, in batting order. Substitutions
+  /// replace an id in place.
+  final Map<String, List<String>> _roster = {};
+  final Set<String> _replaced = {};
+  final List<Substitute> _substitutions = [];
+
+  /// Penalty runs waiting for a side that has not batted yet (Law 41.17).
+  final Map<String, int> _carriedPenalty = {};
+  bool _awaitingFollowOn = false;
+
+  /// Follow-on margin adjusted for lost time, overriding the rules.
+  int? _followOnMargin;
+
   MatchRules get rules => setup.rules;
 
   // ---------------------------------------------------------------- events
@@ -35,6 +51,17 @@ final class Scorer {
       throw const IllegalEventException(
         IllegalEventCode.matchOver,
         'The match is over.',
+      );
+    }
+    if (_awaitingFollowOn &&
+        event is! FollowOn &&
+        event is! Drawn &&
+        event is! Abandoned &&
+        event is! PenaltyRuns &&
+        event is! Substitute) {
+      throw const IllegalEventException(
+        IllegalEventCode.followOnPending,
+        'Decide whether to enforce the follow-on first.',
       );
     }
     switch (event) {
@@ -56,11 +83,30 @@ final class Scorer {
         _close(_open, InningsEndReason.closed);
       case RunOutBeforeDelivery():
         _runOutBeforeDelivery(event);
+      case Declare():
+        _declare();
+      case Forfeit():
+        _forfeit();
+      case FollowOn():
+        _followOn(enforce: event.enforce);
+      case Drawn():
+        _requireTwoInnings(
+          'A limited-overs match cannot be drawn; record it as abandoned '
+          'instead.',
+        );
+        _endMatch(const Draw());
+      case PenaltyRuns():
+        _penalty(event);
+      case Substitute():
+        _substitute(event);
+      case FollowOnMarginSet():
+        _setFollowOnMargin(event.runs);
+      case OverCalledEarly():
+        _overCalledEarly();
+      case OverExtended():
+        _overExtended();
       case Abandoned():
-        final inn = _current;
-        inn.end ??= InningsEndReason.closed;
-        inn.bowler = null;
-        _result = const NoResult();
+        _endMatch(const NoResult());
       case Delivery():
         _delivery(event);
     }
@@ -105,7 +151,7 @@ final class Scorer {
   void _selectBowler(String id) {
     final inn = _open;
     _requireOpeners(inn);
-    if (!setup.team(inn.bowlingTeamId).hasPlayer(id)) {
+    if (!_roster[inn.bowlingTeamId]!.contains(id)) {
       throw IllegalEventException(
         IllegalEventCode.notInBowlingTeam,
         '${_name(id)} is not in the fielding side.',
@@ -156,7 +202,11 @@ final class Scorer {
     } else {
       inn.nonStriker = id;
     }
-    inn.partnerships.add(_Partnership([inn.striker!, inn.nonStriker!]));
+    // Both ends can be empty at once (a wicket and a retirement together);
+    // the partnership starts when the second batter arrives.
+    if (inn.striker != null && inn.nonStriker != null) {
+      inn.partnerships.add(_Partnership([inn.striker!, inn.nonStriker!]));
+    }
   }
 
   void _swapStrike() {
@@ -251,7 +301,162 @@ final class Scorer {
     _afterChange(inn);
   }
 
+  void _requireTwoInnings(String message) {
+    if (!rules.isTwoInnings) {
+      throw IllegalEventException(IllegalEventCode.notAllowedInFormat, message);
+    }
+  }
+
+  void _setFollowOnMargin(int runs) {
+    _requireTwoInnings('The follow-on only applies to two-innings matches.');
+    if (runs < 1) {
+      throw const IllegalEventException(
+        IllegalEventCode.notAllowedInFormat,
+        'The follow-on margin must be at least 1 run.',
+      );
+    }
+    if (_awaitingFollowOn ||
+        _regularInnings.where((i) => i.end != null).length >= 2) {
+      throw const IllegalEventException(
+        IllegalEventCode.notAllowedInFormat,
+        'The follow-on margin must be set before the second innings ends.',
+      );
+    }
+    _followOnMargin = runs;
+  }
+
+  void _declare() {
+    _requireTwoInnings('Declarations are only for two-innings matches.');
+    final inn = _open;
+    _requireOpeners(inn);
+    _close(inn, InningsEndReason.declared);
+  }
+
+  void _forfeit() {
+    _requireTwoInnings('Forfeits are only for two-innings matches.');
+    final inn = _open;
+    if (inn.openersSet) {
+      throw const IllegalEventException(
+        IllegalEventCode.notAllowedInFormat,
+        'An innings can only be forfeited before it starts; declare instead.',
+      );
+    }
+    _close(inn, InningsEndReason.forfeited);
+  }
+
+  void _followOn({required bool enforce}) {
+    if (!_awaitingFollowOn) {
+      throw const IllegalEventException(
+        IllegalEventCode.notAllowedInFormat,
+        'The follow-on is not available now.',
+      );
+    }
+    _awaitingFollowOn = false;
+    final regular = _regularInnings;
+    _startInnings(
+      kind: InningsKind.regular,
+      battingTeamId: enforce
+          ? regular[1].battingTeamId
+          : regular[0].battingTeamId,
+      ballLimit: rules.ballsPerInnings,
+    );
+  }
+
+  void _endMatch(MatchResult result) {
+    final inn = _current;
+    inn.end ??= InningsEndReason.closed;
+    inn.bowler = null;
+    _awaitingFollowOn = false;
+    _result = result;
+  }
+
+  void _penalty(PenaltyRuns e) {
+    if (e.runs < 1) {
+      throw const IllegalEventException(
+        IllegalEventCode.invalidPenalty,
+        'Penalty runs must be at least 1.',
+      );
+    }
+    if (e.teamId != setup.teamA.id && e.teamId != setup.teamB.id) {
+      throw const IllegalEventException(
+        IllegalEventCode.invalidPenalty,
+        'Penalty runs go to one of the two sides.',
+      );
+    }
+    final inn = _current;
+    if (inn.end == null && inn.battingTeamId == e.teamId) {
+      inn
+        ..runs += e.runs
+        ..penalty += e.runs;
+      if (inn.partnerships.isNotEmpty) inn.partnerships.last.runs += e.runs;
+      _afterChange(inn);
+      return;
+    }
+    final completed = _regularInnings.lastWhereOrNull(
+      (i) => i.battingTeamId == e.teamId && i.end != null,
+    );
+    if (completed != null) {
+      completed
+        ..runs += e.runs
+        ..penalty += e.runs;
+    } else {
+      _carriedPenalty.update(
+        e.teamId,
+        (r) => r + e.runs,
+        ifAbsent: () => e.runs,
+      );
+    }
+    if (inn.end == null) _afterChange(inn);
+  }
+
+  void _substitute(Substitute e) {
+    Never fail(String message) => throw IllegalEventException(
+      IllegalEventCode.invalidSubstitution,
+      message,
+    );
+
+    final teamId = _roster.entries
+        .where((t) => t.value.contains(e.outPlayerId))
+        .map((t) => t.key)
+        .firstOrNull;
+    if (teamId == null) fail('${_name(e.outPlayerId)} is not playing.');
+    final team = setup.team(teamId);
+    if (!team.substitutes.any((p) => p.id == e.inPlayerId)) {
+      fail(
+        '${_name(e.inPlayerId)} is not a named substitute for ${team.name}.',
+      );
+    }
+    if (_roster[teamId]!.contains(e.inPlayerId) ||
+        _replaced.contains(e.inPlayerId)) {
+      fail('${_name(e.inPlayerId)} has already played in this match.');
+    }
+    final inn = _current;
+    if (inn.end == null) {
+      if (e.outPlayerId == inn.striker || e.outPlayerId == inn.nonStriker) {
+        fail(
+          '${_name(e.outPlayerId)} is batting; record them as retired first.',
+        );
+      }
+      if (e.outPlayerId == inn.bowler) {
+        fail(
+          '${_name(e.outPlayerId)} is bowling; choose another bowler for '
+          'the over first.',
+        );
+      }
+    }
+    final roster = _roster[teamId]!;
+    roster[roster.indexOf(e.outPlayerId)] = e.inPlayerId;
+    _replaced.add(e.outPlayerId);
+    _substitutions.add(e);
+  }
+
   void _revise(RevisedTarget e) {
+    if (rules.ballsPerInnings == null) {
+      throw const IllegalEventException(
+        IllegalEventCode.notAllowedInFormat,
+        'Revised targets are only for limited-overs matches.',
+      );
+    }
     final inn = _open;
     if (inn.kind != InningsKind.regular) {
       throw const IllegalEventException(
@@ -272,7 +477,7 @@ final class Scorer {
     }
     final target = e.target;
     if (target != null) {
-      if (inn.target == null) {
+      if (_target(inn) == null) {
         throw const IllegalEventException(
           IllegalEventCode.invalidRevision,
           'A target can only be set for the side batting second.',
@@ -284,9 +489,7 @@ final class Scorer {
           'The target must be at least 1 run.',
         );
       }
-      inn
-        ..target = target
-        ..revisedTarget = true;
+      inn.revisedTargetRuns = target;
     }
     _afterChange(inn);
   }
@@ -404,16 +607,61 @@ final class Scorer {
       inn.freeHitNext = false;
     }
 
-    if (d.isLegal && over.legalBalls == rules.ballsPerOver) {
-      over.complete = true;
-      if (over.bowlers.length == 1 && over.bowlerRuns == 0) bowler.maidens++;
-      inn.bowler = null;
-      if (!inn.alone && inn.completedOvers % rules.oversPerEnd == 0) {
-        inn.swapEnds();
-      }
+    if (d.isLegal && over.legalBalls == rules.ballsPerOver + over.extraBalls) {
+      _completeOver(inn, over);
     }
 
     _afterChange(inn);
+  }
+
+  void _completeOver(_Innings inn, _Over over) {
+    over.complete = true;
+    over.maidenTo = over.bowlers.length == 1 && over.bowlerRuns == 0
+        ? over.bowlers.single
+        : null;
+    if (over.maidenTo != null) inn.bowlers[over.maidenTo]!.maidens++;
+    inn.bowler = null;
+    over.swappedEnds =
+        !inn.alone && inn.completedOvers % rules.oversPerEnd == 0;
+    if (over.swappedEnds) inn.swapEnds();
+  }
+
+  void _overCalledEarly() {
+    final inn = _open;
+    final over = inn.currentOver;
+    if (over == null || over.legalBalls == 0) {
+      throw const IllegalEventException(
+        IllegalEventCode.notAllowedInFormat,
+        'An over can only be called early after at least one legal ball.',
+      );
+    }
+    final short = rules.ballsPerOver + over.extraBalls - over.legalBalls;
+    over.extraBalls -= short;
+    inn.ballAdjustment -= short;
+    inn.bowlers[over.bowlers.last]!.ballAdjustment -= short;
+    _completeOver(inn, over);
+    _afterChange(inn);
+  }
+
+  void _overExtended() {
+    final inn = _open;
+    final over = inn.overs.isEmpty ? null : inn.overs.last;
+    if (over == null || !over.complete || inn.bowler != null) {
+      throw const IllegalEventException(
+        IllegalEventCode.notAllowedInFormat,
+        'An extra ball can only be added straight after the over ends.',
+      );
+    }
+    if (over.swappedEnds) inn.swapEnds();
+    if (over.maidenTo != null) inn.bowlers[over.maidenTo]!.maidens--;
+    over
+      ..complete = false
+      ..maidenTo = null
+      ..swappedEnds = false
+      ..extraBalls += 1;
+    inn.ballAdjustment += 1;
+    inn.bowlers[over.bowlers.last]!.ballAdjustment += 1;
+    inn.bowler = over.bowlers.last;
   }
 
   // ------------------------------------------------------------ validation
@@ -470,7 +718,7 @@ final class Scorer {
       );
     }
     if (d.boundary != 0) fail('A boundary cannot be scored on a wicket ball.');
-    final target = inn.target;
+    final target = _target(inn);
     if (target != null) {
       final penalty = switch (d.kind) {
         DeliveryKind.wide => rules.wideRuns,
@@ -485,7 +733,10 @@ final class Scorer {
       }
     }
     final fielder = dismissal.fielderId;
-    if (fielder != null && !setup.team(inn.bowlingTeamId).hasPlayer(fielder)) {
+    // Substitute fielders may take catches (Law 24.1), so the whole squad
+    // counts.
+    if (fielder != null &&
+        !setup.team(inn.bowlingTeamId).squad.any((p) => p.id == fielder)) {
       throw IllegalEventException(
         IllegalEventCode.notInBowlingTeam,
         '${_name(fielder)} is not in the fielding side.',
@@ -544,7 +795,7 @@ final class Scorer {
   }
 
   void _requireCandidate(_Innings inn, String id) {
-    if (!setup.team(inn.battingTeamId).hasPlayer(id)) {
+    if (!_roster[inn.battingTeamId]!.contains(id)) {
       throw IllegalEventException(
         IllegalEventCode.notInBattingTeam,
         '${_name(id)} is not in the batting side.',
@@ -604,9 +855,10 @@ final class Scorer {
     final InningsEndReason? reason;
     if (inn.wickets >= inn.maxWickets) {
       reason = InningsEndReason.allOut;
-    } else if (inn.target != null && inn.runs >= inn.target!) {
+    } else if (_target(inn) case final t? when inn.runs >= t) {
       reason = InningsEndReason.targetReached;
-    } else if (inn.ballLimit != null && inn.legalBalls >= inn.ballLimit!) {
+    } else if (inn.ballLimit != null &&
+        inn.legalBalls >= inn.ballLimit! + inn.ballAdjustment) {
       reason = InningsEndReason.ballsComplete;
     } else {
       reason = null;
@@ -642,7 +894,7 @@ final class Scorer {
     required InningsKind kind,
     required String battingTeamId,
     required int? ballLimit,
-    int? target,
+    int? superOverTarget,
     Set<String> barredBatters = const {},
     Set<String> barredBowlers = const {},
   }) {
@@ -657,33 +909,97 @@ final class Scorer {
         maxWickets: superOver
             ? math.min(2, rules.playersPerSide - 1)
             : rules.maxWickets,
-        target: target,
+        fixedTarget: superOverTarget,
         barredBatters: barredBatters,
         barredBowlers: barredBowlers,
       ),
     );
+    final carried = _carriedPenalty.remove(battingTeamId);
+    if (carried != null) {
+      _innings.last
+        ..runs += carried
+        ..penalty += carried;
+    }
   }
 
   void _afterInningsClosed(_Innings inn) {
     if (_result != null) return;
-    if (inn.kind == InningsKind.regular) {
-      if (inn.number == 1) {
+    if (inn.kind == InningsKind.superOver) {
+      _resolveSuperOver(inn);
+      return;
+    }
+    final regular = _regularInnings;
+    if (!rules.isTwoInnings) {
+      if (regular.length == 1) {
         _startInnings(
           kind: InningsKind.regular,
           battingTeamId: inn.bowlingTeamId,
           ballLimit: inn.ballLimit,
-          target: inn.runs + 1,
         );
-        return;
+      } else {
+        _resolveChase(inn);
       }
-      _resolveChase(inn);
       return;
     }
-    _resolveSuperOver(inn);
+    switch (regular.length) {
+      case 1:
+        _startInnings(
+          kind: InningsKind.regular,
+          battingTeamId: inn.bowlingTeamId,
+          ballLimit: rules.ballsPerInnings,
+        );
+      case 2:
+        final lead = regular[0].runs - regular[1].runs;
+        final margin = _followOnMargin ?? rules.followOnMargin;
+        if (margin != null && lead >= margin) {
+          _awaitingFollowOn = true;
+        } else {
+          _startInnings(
+            kind: InningsKind.regular,
+            battingTeamId: regular[0].battingTeamId,
+            ballLimit: rules.ballsPerInnings,
+          );
+        }
+      case 3:
+        // The side that has batted twice may still be behind (Law 16.1).
+        final twice = inn.battingTeamId;
+        final once = inn.bowlingTeamId;
+        final behind = _totalFor(once) - _totalFor(twice);
+        if (behind > 0) {
+          _result = Win(winnerTeamId: once, margin: ByInningsAndRuns(behind));
+        } else {
+          _startInnings(
+            kind: InningsKind.regular,
+            battingTeamId: once,
+            ballLimit: rules.ballsPerInnings,
+          );
+        }
+      default:
+        _resolveChase(inn);
+    }
+  }
+
+  List<_Innings> get _regularInnings =>
+      _innings.where((i) => i.kind == InningsKind.regular).toList();
+
+  int _totalFor(String teamId) => _regularInnings
+      .where((i) => i.battingTeamId == teamId)
+      .fold(0, (sum, i) => sum + i.runs);
+
+  /// Runs needed to win, for the last regular innings and super overs.
+  int? _target(_Innings inn) {
+    if (inn.revisedTargetRuns != null) return inn.revisedTargetRuns;
+    if (inn.kind == InningsKind.superOver) return inn.fixedTarget;
+    final regular = _regularInnings;
+    if (regular.indexOf(inn) != rules.inningsPerSide * 2 - 1) return null;
+    final own = regular
+        .where((i) => i != inn && i.battingTeamId == inn.battingTeamId)
+        .fold(0, (sum, i) => sum + i.runs);
+    return _totalFor(inn.bowlingTeamId) - own + 1;
   }
 
   void _resolveChase(_Innings chase) {
-    final target = chase.target!;
+    final target = _target(chase)!;
     if (chase.runs >= target) {
       _result = Win(
         winnerTeamId: chase.battingTeamId,
@@ -691,9 +1007,9 @@ final class Scorer {
           chase.maxWickets - chase.wickets,
           ballsRemaining: chase.ballLimit == null
               ? null
-              : chase.ballLimit! - chase.legalBalls,
+              : chase.ballLimit! + chase.ballAdjustment - chase.legalBalls,
         ),
-        revisedTarget: chase.revisedTarget,
+        revisedTarget: chase.revisedTargetRuns != null,
       );
     } else if (chase.runs == target - 1) {
       if (rules.tieBreak == TieBreak.none) {
@@ -710,24 +1026,24 @@ final class Scorer {
       _result = Win(
         winnerTeamId: chase.bowlingTeamId,
         margin: ByRuns(target - 1 - chase.runs),
-        revisedTarget: chase.revisedTarget,
+        revisedTarget: chase.revisedTargetRuns != null,
       );
     }
   }
 
   void _resolveSuperOver(_Innings inn) {
-    if (inn.target == null) {
+    if (inn.fixedTarget == null) {
       _startInnings(
         kind: InningsKind.superOver,
         battingTeamId: inn.bowlingTeamId,
         ballLimit: rules.ballsPerOver,
-        target: inn.runs + 1,
+        superOverTarget: inn.runs + 1,
         barredBatters: _previousSuperOver(inn.bowlingTeamId, batting: true),
         barredBowlers: _previousSuperOver(inn.battingTeamId, batting: false),
       );
       return;
     }
-    final target = inn.target!;
+    final target = inn.fixedTarget!;
     if (inn.runs >= target) {
       _result = Win(
         winnerTeamId: inn.battingTeamId,
@@ -797,15 +1113,15 @@ final class Scorer {
 
   /// Players who may come in next: yet to bat, then retired not out.
   List<String> _batterCandidates(_Innings inn) {
-    final team = setup.team(inn.battingTeamId);
+    final roster = _roster[inn.battingTeamId]!;
     final yetToBat = [
-      for (final p in team.players)
-        if (!inn.batters.containsKey(p.id) && !inn.barredBatters.contains(p.id))
-          p.id,
+      for (final id in roster)
+        if (!inn.batters.containsKey(id) && !inn.barredBatters.contains(id)) id,
     ];
     final retired = [
       for (final b in inn.batters.values)
         if (b.status == BatterStatus.retiredNotOut &&
+            roster.contains(b.id) &&
             !inn.barredBatters.contains(b.id))
           b.id,
     ];
@@ -815,6 +1131,14 @@ final class Scorer {
   int? _bowlerMaxBalls(_Innings inn) => inn.kind == InningsKind.superOver
       ? null
       : rules.bowlerLimit.maxBalls(
+          inningsBalls: inn.ballLimit,
+          ballsPerOver: rules.ballsPerOver,
+        );
+
+  ({int balls, int extraOverBowlers})? _bowlerAllowance(_Innings inn) =>
+      inn.kind == InningsKind.superOver
+      ? null
+      : rules.bowlerLimit.allowance(
           inningsBalls: inn.ballLimit,
           ballsPerOver: rules.ballsPerOver,
         );
@@ -829,34 +1153,44 @@ final class Scorer {
     }
     if (midOver && inn.bowler == id) return BowlerIneligibility.currentBowler;
 
+    // Law 17.6, and 17.8 for a replacement mid-over: no more consecutive
+    // overs than the format allows (one under the Laws).
     final completed = inn.overs.where((o) => o.complete).toList();
-    if (midOver) {
-      // Law 17.8: the replacement must not have bowled the previous over.
-      if (completed.isNotEmpty && completed.last.bowlers.contains(id)) {
-        return BowlerIneligibility.bowledPreviousOver;
-      }
-    } else {
-      var run = 0;
-      for (final o in completed.reversed) {
-        if (!o.bowlers.contains(id)) break;
-        run++;
-      }
-      if (run >= rules.maxConsecutiveOversPerBowler) {
-        return BowlerIneligibility.bowledPreviousOver;
-      }
+    var run = 0;
+    for (final o in completed.reversed) {
+      if (!o.bowlers.contains(id)) break;
+      run++;
+    }
+    if (run >= rules.maxConsecutiveOversPerBowler) {
+      return BowlerIneligibility.bowledPreviousOver;
     }
 
-    final max = _bowlerMaxBalls(inn);
-    if (max != null) {
+    final allowance = _bowlerAllowance(inn);
+    if (allowance != null) {
       final over = inn.currentOver;
       var needed = midOver
           ? rules.ballsPerOver - over!.legalBalls
           : rules.ballsPerOver;
       if (inn.ballLimit != null) {
-        needed = math.min(needed, inn.ballLimit! - inn.legalBalls);
+        needed = math.min(
+          needed,
+          inn.ballLimit! + inn.ballAdjustment - inn.legalBalls,
+        );
       }
-      final bowled = inn.bowlers[id]?.legalBalls ?? 0;
-      if (bowled + needed > max) return BowlerIneligibility.quotaReached;
+      // Quotas count overs, so balls from umpire miscounts do not use any.
+      int used(_Bowler b) => b.legalBalls - b.ballAdjustment;
+      final b = inn.bowlers[id];
+      final total = (b == null ? 0 : used(b)) + needed;
+      if (total > allowance.balls) {
+        // Only a limited number of bowlers may bowl the extra over.
+        final othersOver = inn.bowlers.values
+            .where((o) => o.id != id && used(o) > allowance.balls)
+            .length;
+        if (total > allowance.balls + rules.ballsPerOver ||
+            othersOver >= allowance.extraOverBowlers) {
+          return BowlerIneligibility.quotaReached;
+        }
+      }
     }
     return null;
   }
@@ -865,12 +1199,12 @@ final class Scorer {
     final inn = _current;
     final eligible = <String>[];
     final ineligible = <String, BowlerIneligibility>{};
-    for (final p in setup.team(inn.bowlingTeamId).players) {
-      final reason = _bowlerIneligibility(inn, p.id, midOver: midOver);
+    for (final id in _roster[inn.bowlingTeamId]!) {
+      final reason = _bowlerIneligibility(inn, id, midOver: midOver);
       if (reason == null) {
-        eligible.add(p.id);
+        eligible.add(id);
       } else {
-        ineligible[p.id] = reason;
+        ineligible[id] = reason;
       }
     }
     return ChooseBowler(
@@ -897,6 +1231,44 @@ final class Scorer {
     return eligible.last;
   }
 
+  // ----------------------------------------------- cheap read access
+
+  /// Lightweight view of the live position, for tools that replay large
+  /// numbers of events and cannot afford a full [snapshot] each time.
+  ({
+    String? striker,
+    String? nonStriker,
+    String? bowler,
+    bool openersSet,
+    bool hasVacancy,
+    bool inningsClosed,
+    int inningsCount,
+    int completedOvers,
+    int currentOverDeliveries,
+    bool awaitingFollowOn,
+    bool matchOver,
+  })
+  get live {
+    final inn = _current;
+    return (
+      striker: inn.striker,
+      nonStriker: inn.nonStriker,
+      bowler: inn.bowler,
+      openersSet: inn.openersSet,
+      hasVacancy: inn.hasVacancy,
+      inningsClosed: inn.end != null,
+      inningsCount: _innings.length,
+      completedOvers: inn.completedOvers,
+      currentOverDeliveries: inn.currentOver?.deliveries.length ?? 0,
+      awaitingFollowOn: _awaitingFollowOn,
+      matchOver: _result != null,
+    );
+  }
+
+  int? get currentTarget => _target(_current);
+
+  int? get currentBallLimit => _current.ballLimit;
+
   // -------------------------------------------------------- snapshots
 
   MatchState snapshot() {
@@ -905,11 +1277,22 @@ final class Scorer {
       innings: [for (final inn in _innings) _snapshotInnings(inn)],
       pending: _pending(),
       result: _result,
+      substitutions: List.unmodifiable(_substitutions),
     );
   }
 
   List<PendingQuestion> _pending() {
     if (_result != null) return const [];
+    if (_awaitingFollowOn) {
+      final regular = _regularInnings;
+      return [
+        ChooseFollowOn(
+          leadingTeamId: regular[0].battingTeamId,
+          trailingTeamId: regular[1].battingTeamId,
+          lead: regular[0].runs - regular[1].runs,
+        ),
+      ];
+    }
     final inn = _current;
     if (inn.end != null) return const [];
     final questions = <PendingQuestion>[];
@@ -948,15 +1331,18 @@ final class Scorer {
       runs: inn.runs,
       wickets: inn.wickets,
       legalBalls: inn.legalBalls,
-      ballLimit: inn.ballLimit,
+      ballLimit: inn.ballLimit == null
+          ? null
+          : inn.ballLimit! + inn.ballAdjustment,
       maxWickets: inn.maxWickets,
       bowlerMaxBalls: _bowlerMaxBalls(inn),
-      target: inn.target,
+      target: _target(inn),
       extras: Extras(
         wides: inn.wides,
         noBalls: inn.noBalls,
         byes: inn.byes,
         legByes: inn.legByes,
+        penalty: inn.penalty,
       ),
       batters: [
         for (final b in inn.batters.values)
@@ -1018,7 +1404,7 @@ final class Scorer {
 
   String _name(String playerId) {
     for (final team in [setup.teamA, setup.teamB]) {
-      for (final p in team.players) {
+      for (final p in team.squad) {
         if (p.id == playerId) return p.name;
       }
     }
@@ -1076,6 +1462,9 @@ final class _Bowler {
   int wides = 0;
   int noBalls = 0;
   int dots = 0;
+
+  /// Extra (or, negative, missing) balls in overs the umpire miscounted.
+  int ballAdjustment = 0;
 }
 
 final class _Over {
@@ -1087,6 +1476,12 @@ final class _Over {
   int legalBalls = 0;
   int bowlerRuns = 0;
   bool complete = false;
+
+  /// Balls more (or, negative, fewer) than the standard over, when the
+  /// umpire miscounted (Law 17.5).
+  int extraBalls = 0;
+  String? maidenTo;
+  bool swappedEnds = false;
 }
 
 final class _Partnership {
@@ -1105,7 +1500,7 @@ final class _Innings {
     required this.bowlingTeamId,
     required this.ballLimit,
     required this.maxWickets,
-    required this.target,
+    required this.fixedTarget,
     required this.barredBatters,
     required this.barredBowlers,
   });
@@ -1115,9 +1510,16 @@ final class _Innings {
   final String battingTeamId;
   final String bowlingTeamId;
   int? ballLimit;
+
+  /// Change to the ball limit from miscounted overs.
+  int ballAdjustment = 0;
   final int maxWickets;
-  int? target;
-  bool revisedTarget = false;
+
+  /// Super over target, set when the innings starts.
+  final int? fixedTarget;
+
+  /// Target given by the officials after an interruption.
+  int? revisedTargetRuns;
   final Set<String> barredBatters;
   final Set<String> barredBowlers;
 
@@ -1128,6 +1530,7 @@ final class _Innings {
   int noBalls = 0;
   int byes = 0;
   int legByes = 0;
+  int penalty = 0;
 
   final Map<String, _Batter> batters = {};
   final Map<String, _Bowler> bowlers = {};
@@ -1164,5 +1567,14 @@ final class _Innings {
   void vacate(String id) {
     if (striker == id) striker = null;
     if (nonStriker == id) nonStriker = null;
+  }
+}
+
+extension<T> on List<T> {
+  T? lastWhereOrNull(bool Function(T) test) {
+    for (var i = length - 1; i >= 0; i--) {
+      if (test(this[i])) return this[i];
+    }
+    return null;
   }
 }

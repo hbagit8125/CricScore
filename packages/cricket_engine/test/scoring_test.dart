@@ -156,6 +156,33 @@ void main() {
       expect(m.inn.bowler('B10')!.figures(6), '1.0-0-1-0');
     });
 
+    test('an over the umpire calls early stands (Law 17.5)', () {
+      m = m.bowl(5).apply(const OverCalledEarly());
+      expect(m.inn.oversText, '0.5');
+      expect(m.inn.bowlerId, isNull);
+      expect(m.inn.strikerId, 'A2');
+      expect(m.inn.ballsRemaining, 114);
+      expect(
+        () => started(MatchRules.t20).apply(const OverCalledEarly()),
+        throwsIllegal(IllegalEventCode.notAllowedInFormat),
+      );
+    });
+
+    test('an extra ball allowed by the umpire stands (Law 17.5)', () {
+      m = m.bowl(6).apply(const OverExtended());
+      expect(m.inn.bowlerId, 'B11');
+      expect(m.inn.strikerId, 'A1');
+      m = m.apply(const Delivery.runs(1));
+      expect(m.inn.overs.single.isComplete, isTrue);
+      expect(m.inn.legalBalls, 7);
+      expect(m.inn.ballsRemaining, 114);
+      // Quotas count overs: the seventh ball does not use up an over.
+      expect(m.inn.bowler('B11')!.legalBalls, 7);
+      m = m.over('B10').bowl(6).over('B11').bowl(6).over('B10').bowl(6);
+      m = m.over('B11').bowl(6).over('B10').bowl(6).over('B11').bowl(6);
+      expect(m.inn.bowler('B11')!.legalBalls, 25);
+    });
+
     test('The Hundred changes ends every ten balls, not every five', () {
       m = started(MatchRules.hundred).bowl(5);
       expect(m.inn.oversText, '1.0');

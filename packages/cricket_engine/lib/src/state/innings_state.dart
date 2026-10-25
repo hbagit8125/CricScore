@@ -6,6 +6,8 @@ enum InningsEndReason {
   allOut,
   ballsComplete,
   targetReached,
+  declared,
+  forfeited,
 
   /// Closed by the scorer, or by the end of the match.
   closed,

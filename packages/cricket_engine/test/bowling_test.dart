@@ -35,6 +35,29 @@ void main() {
     expect(m.inn.bowlerMaxBalls, 12);
   });
 
+  test('shortened T20: 2 overs each from 5 overs, 3 from 10, 4 from 15', () {
+    int? quota(int overs) => MatchRules.t20.bowlerLimit.maxBalls(
+      inningsBalls: overs * 6,
+      ballsPerOver: 6,
+    );
+    expect(quota(5), 12);
+    expect(quota(9), 12);
+    expect(quota(10), 18);
+    expect(quota(15), 24);
+    expect(quota(20), 24);
+    expect(quota(4), 6);
+  });
+
+  test('shortened ODI: just enough bowlers may bowl one extra over', () {
+    // 7 overs: one over each, two bowlers may bowl a second.
+    m = started(MatchRules.odi).apply(const RevisedTarget(ballsPerInnings: 42));
+    m = m.bowl(6).over('B10').bowl(6).over('B11').bowl(6).over('B10').bowl(6);
+    final q = m.state.pending.single as ChooseBowler;
+    expect(q.ineligible['B11'], BowlerIneligibility.quotaReached);
+    expect(q.ineligible['B10'], BowlerIneligibility.bowledPreviousOver);
+    expect(q.eligible, contains('B9'));
+  });
+
   test('the quota follows a reduced innings', () {
     m = m.apply(const RevisedTarget(ballsPerInnings: 42));
     expect(m.inn.bowlerMaxBalls, 12);

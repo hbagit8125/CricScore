@@ -24,9 +24,12 @@ An event that breaks the rules throws `IllegalEventException` with a plain-langu
 
 ## Scope
 
-Covered now (phase P1a): single-innings formats (T20, ODI, T10, The Hundred, custom); wides, no-balls, byes, leg byes, overthrows; all ten dismissals with the limits on wides, no-balls and free hits; strike changes; bowler quotas, consecutive overs and mid-over replacement; retirements; revised targets; ties, super overs and boundary count-back; last batter batting alone; junior retirement scores.
-
-Coming in P1b: two-innings matches (follow-on, declarations, draws), penalty runs, substitutions, and replays of real published matches.
+- **Formats:** T20, ODI, T10, The Hundred, Test, first-class and custom rules (team size, balls per over, wide and no-ball values, free hits, LBW, last batter alone, junior retirement score, tie-breaks).
+- **Deliveries:** wides, no-balls, byes, leg byes and overthrows; strike follows runs actually run; overs the umpire miscounts stand (Law 17.5).
+- **Dismissals:** all ten, limited correctly on wides, no-balls and free hits, including run outs at either end, run out before the ball is bowled, retirements and timed out.
+- **Bowling:** no consecutive overs, quotas for full and shortened ODIs and T20s, mid-over replacement.
+- **Innings and results:** all out, overs, targets, rain-revised targets, declarations, forfeits, follow-on (including a margin reduced for lost time), innings victories, draws, ties, repeated super overs, boundary count-back, abandonment.
+- **Other:** penalty runs (Law 41) and substitutions (concussion, impact player).
 
 ## Tests
 
@@ -34,4 +37,7 @@ Coming in P1b: two-innings matches (follow-on, declarations, draws), penalty run
 dart test
 ```
 
-Scenario tests cover each rule; `test/invariants_test.dart` plays randomised whole matches in every format and checks that totals, figures, quotas and over sequences always add up.
+- Scenario tests cover each rule.
+- `test/invariants_test.dart` plays randomised whole matches in every format and checks that totals, figures, quotas and over sequences always add up.
+- `test/cricsheet_fixtures_test.dart` replays 13 real matches from [Cricsheet](https://cricsheet.org) and compares them with the published scorecards.
+- `test/cricsheet_bulk_test.dart` does the same for a whole Cricsheet download (not run in CI). Across 8,551 men's Tests, ODIs, T20 internationals, IPL and Hundred matches, 8,526 match exactly; the rest are data errors, umpire slips the engine correctly refuses, or rain targets set part-way through a chase that the data cannot place.

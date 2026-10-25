@@ -18,6 +18,10 @@ enum IllegalEventCode {
   wrongBatterOut,
   invalidRevision,
   cannotSwapStrike,
+  notAllowedInFormat,
+  followOnPending,
+  invalidPenalty,
+  invalidSubstitution,
 }
 
 /// The engine refused an event because it breaks the Laws or the match's

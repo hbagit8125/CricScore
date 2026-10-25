@@ -4,8 +4,19 @@ import 'dart:math' as math;
 sealed class BowlerLimit {
   const BowlerLimit();
 
-  /// Maximum legal balls for one bowler, or null for no limit.
-  int? maxBalls({required int? inningsBalls, required int ballsPerOver});
+  /// Legal balls each bowler may bowl, and how many bowlers may bowl one
+  /// over more than that. Null for no limit.
+  ({int balls, int extraOverBowlers})? allowance({
+    required int? inningsBalls,
+    required int ballsPerOver,
+  });
+
+  /// The most legal balls any one bowler may bowl, or null for no limit.
+  int? maxBalls({required int? inningsBalls, required int ballsPerOver}) {
+    final a = allowance(inningsBalls: inningsBalls, ballsPerOver: ballsPerOver);
+    if (a == null) return null;
+    return a.balls + (a.extraOverBowlers > 0 ? ballsPerOver : 0);
+  }
 }
 
 /// No limit, as in Test and most first-class cricket.
@@ -13,8 +24,10 @@ final class NoBowlerLimit extends BowlerLimit {
   const NoBowlerLimit();
 
   @override
-  int? maxBalls({required int? inningsBalls, required int ballsPerOver}) =>
-      null;
+  ({int balls, int extraOverBowlers})? allowance({
+    required int? inningsBalls,
+    required int ballsPerOver,
+  }) => null;
 
   @override
   bool operator ==(Object other) => other is NoBowlerLimit;
@@ -23,18 +36,20 @@ final class NoBowlerLimit extends BowlerLimit {
   int get hashCode => (NoBowlerLimit).hashCode;
 }
 
-/// One fifth of the innings, rounded up to whole overs.
-///
-/// This is the usual limited-overs playing condition (4 overs in a T20,
-/// 10 in an ODI) and it follows the innings when the overs are reduced.
+/// One fifth of the innings (10 overs in an ODI). When the overs do not
+/// divide by five, just enough bowlers may bowl one over more: in a
+/// 41-over innings each bowler gets 8 and one bowler may bowl 9.
 final class FifthOfInnings extends BowlerLimit {
   const FifthOfInnings();
 
   @override
-  int? maxBalls({required int? inningsBalls, required int ballsPerOver}) {
+  ({int balls, int extraOverBowlers})? allowance({
+    required int? inningsBalls,
+    required int ballsPerOver,
+  }) {
     if (inningsBalls == null) return null;
     final overs = (inningsBalls / ballsPerOver).ceil();
-    return math.max(1, (overs / 5).ceil()) * ballsPerOver;
+    return (balls: (overs ~/ 5) * ballsPerOver, extraOverBowlers: overs % 5);
   }
 
   @override
@@ -44,6 +59,31 @@ final class FifthOfInnings extends BowlerLimit {
   int get hashCode => (FifthOfInnings).hashCode;
 }
 
+/// Twenty20 limits (also used by The Hundred, counting sets of five
+/// balls as overs): 4 overs in a full innings. A shortened innings allows
+/// 2 overs per bowler from 5 to 9 overs, 3 from 10 to 14 and 4 from 15 to
+/// 19, as applied in published T20 international scorecards.
+final class T20BowlerLimit extends BowlerLimit {
+  const T20BowlerLimit();
+
+  @override
+  ({int balls, int extraOverBowlers})? allowance({
+    required int? inningsBalls,
+    required int ballsPerOver,
+  }) {
+    if (inningsBalls == null) return null;
+    final overs = (inningsBalls / ballsPerOver).ceil();
+    final each = overs >= 20 ? overs ~/ 5 : math.min(overs ~/ 5 + 1, 4);
+    return (balls: each * ballsPerOver, extraOverBowlers: 0);
+  }
+
+  @override
+  bool operator ==(Object other) => other is T20BowlerLimit;
+
+  @override
+  int get hashCode => (T20BowlerLimit).hashCode;
+}
+
 /// A fixed number of legal balls per bowler.
 final class FixedBowlerLimit extends BowlerLimit {
   const FixedBowlerLimit(this.balls) : assert(balls > 0);
@@ -51,8 +91,10 @@ final class FixedBowlerLimit extends BowlerLimit {
   final int balls;
 
   @override
-  int? maxBalls({required int? inningsBalls, required int ballsPerOver}) =>
-      balls;
+  ({int balls, int extraOverBowlers})? allowance({
+    required int? inningsBalls,
+    required int ballsPerOver,
+  }) => (balls: balls, extraOverBowlers: 0);
 
   @override
   bool operator ==(Object other) =>
@@ -95,6 +137,8 @@ final class MatchRules {
     this.lastBatterCanBatAlone = false,
     this.retireAtRuns,
     this.tieBreak = TieBreak.none,
+    this.inningsPerSide = 1,
+    this.followOnMargin,
   });
 
   /// A starting point for local cricket: any overs and team size.
@@ -116,7 +160,7 @@ final class MatchRules {
   static const t20 = MatchRules(
     name: 'T20',
     ballsPerInnings: 120,
-    bowlerLimit: FifthOfInnings(),
+    bowlerLimit: T20BowlerLimit(),
     freeHitAfterNoBall: true,
     tieBreak: TieBreak.superOverRepeat,
   );
@@ -142,21 +186,46 @@ final class MatchRules {
   /// 100 balls a side in sets of five; ends change every ten balls and a
   /// bowler may bowl five or ten in a row.
   ///
-  /// Check the competition's current playing conditions before relying on
-  /// the exact values.
+  /// Published ball-by-ball data shows a no-ball worth 2 runs from 2021 to
+  /// 2025 and 1 run from 2026; adjust [noBallRuns] for older seasons.
   static const hundred = MatchRules(
     name: 'The Hundred',
     ballsPerOver: 5,
     ballsPerInnings: 100,
-    bowlerLimit: FifthOfInnings(),
+    bowlerLimit: T20BowlerLimit(),
     maxConsecutiveOversPerBowler: 2,
     oversPerEnd: 2,
     freeHitAfterNoBall: true,
     tieBreak: TieBreak.superOverRepeat,
   );
 
+  /// Five-day Test: two innings each, follow-on at 200.
+  static const test = MatchRules(
+    name: 'Test',
+    inningsPerSide: 2,
+    followOnMargin: 200,
+  );
+
+  /// Four-day first-class match: two innings each, follow-on at 150.
+  static const firstClass = MatchRules(
+    name: 'First-class',
+    inningsPerSide: 2,
+    followOnMargin: 150,
+  );
+
   /// Limited-overs presets offered when creating a match.
   static const presets = [t20, odi, t10, hundred];
+
+  /// Two-innings presets.
+  static const multiDayPresets = [test, firstClass];
+
+  /// Law 14.1.1 follow-on margin for a two-innings match of [days] days.
+  static int followOnMarginForDays(int days) => switch (days) {
+    >= 5 => 200,
+    >= 3 => 150,
+    2 => 100,
+    _ => 75,
+  };
 
   /// Shown to the scorer, e.g. "T20".
   final String name;
@@ -190,6 +259,15 @@ final class MatchRules {
   final int? retireAtRuns;
   final TieBreak tieBreak;
 
+  /// 1 for limited-overs cricket, 2 for Tests and first-class matches.
+  final int inningsPerSide;
+
+  /// Lead after the first innings at which the side batting first may
+  /// make the other side follow on (Law 14), or null for no follow-on.
+  final int? followOnMargin;
+
+  bool get isTwoInnings => inningsPerSide == 2;
+
   /// The most wickets that can fall before the innings is all out.
   int get maxWickets =>
       lastBatterCanBatAlone ? playersPerSide : playersPerSide - 1;
@@ -207,6 +285,13 @@ final class MatchRules {
       if (wideRuns < 0 || noBallRuns < 0) 'Penalty runs cannot be negative.',
       if (retireAtRuns != null && retireAtRuns! < 1)
         'Retirement score must be at least 1.',
+      if (inningsPerSide != 1 && inningsPerSide != 2)
+        'Each side has 1 or 2 innings.',
+      if (inningsPerSide == 2 && tieBreak != TieBreak.none)
+        'Super overs are only for one-innings matches.',
+      if (followOnMargin != null &&
+          (inningsPerSide != 2 || followOnMargin! < 1))
+        'The follow-on needs a two-innings match and a positive margin.',
     ];
   }
 
@@ -227,6 +312,9 @@ final class MatchRules {
     int? retireAtRuns,
     bool clearRetireAtRuns = false,
     TieBreak? tieBreak,
+    int? inningsPerSide,
+    int? followOnMargin,
+    bool clearFollowOnMargin = false,
   }) {
     return MatchRules(
       name: name ?? this.name,
@@ -249,6 +337,10 @@ final class MatchRules {
           ? null
           : retireAtRuns ?? this.retireAtRuns,
       tieBreak: tieBreak ?? this.tieBreak,
+      inningsPerSide: inningsPerSide ?? this.inningsPerSide,
+      followOnMargin: clearFollowOnMargin
+          ? null
+          : followOnMargin ?? this.followOnMargin,
     );
   }
 }
