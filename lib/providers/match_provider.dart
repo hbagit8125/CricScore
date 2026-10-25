@@ -25,6 +25,26 @@ class MatchProvider with ChangeNotifier {
 
   bool get isOverComplete => currentOver.where((e) => e.isLegalBall).length >= 6;
 
+  // An innings ends when only one batter is left not out.
+  bool get isAllOut {
+    if (battingTeam == null) return false;
+    return battingTeam!.wicketsLost >= battingTeam!.players.length - 1;
+  }
+
+  // Players who can come in next: not out and not already at the crease.
+  List<Player> get availableBatsmen {
+    if (battingTeam == null) return [];
+    return battingTeam!.players
+        .where((p) => !p.isOut && p != currentStriker && p != currentNonStriker)
+        .toList();
+  }
+
+  // Runs per over, from legal balls only.
+  double get currentRunRate {
+    if (battingTeam == null || battingTeam!.ballsFaced == 0) return 0.0;
+    return battingTeam!.totalRuns * 6 / battingTeam!.ballsFaced;
+  }
+
   // Setup Match
   void initMatch(String name, int playerCount, String teamAName, String teamBName, List<Player> playersA, List<Player> playersB) {
     matchName = name;
@@ -32,6 +52,8 @@ class MatchProvider with ChangeNotifier {
     teamA = Team(name: teamAName, players: playersA);
     teamB = Team(name: teamBName, players: playersB);
     isMatchStarted = false;
+    currentOver = [];
+    inningsHistory = [];
     notifyListeners();
   }
 
@@ -48,6 +70,7 @@ class MatchProvider with ChangeNotifier {
   // Core Logic: Process Ball
   void processBall(BallEvent event) {
     if (battingTeam == null || currentStriker == null || currentBowler == null) return;
+    if (isAllOut) return;
 
     // Handle Wide 4 Logic (5 runs total, 1 extra, 4 runs not to batsman usually but extra runs are 5.
     // Wait, usually Wide 4 means 5 wides. If it hits bat it's not wide.

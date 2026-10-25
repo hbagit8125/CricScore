@@ -31,15 +31,25 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
     _updatePlayerLists();
   }
 
+  // Keeps already-edited players and only adds or trims at the end.
   void _updatePlayerLists() {
-    _teamAPlayers = List.generate(
+    _teamAPlayers = _resizeSquad(_teamAPlayers, "A");
+    _teamBPlayers = _resizeSquad(_teamBPlayers, "B");
+  }
+
+  List<Player> _resizeSquad(List<Player> current, String prefix) {
+    return List.generate(
       _selectedPlayers,
-      (i) => Player(id: "A$i", name: "Player A${i+1}")
+      (i) => i < current.length ? current[i] : Player(id: "$prefix$i", name: "Player $prefix${i+1}"),
     );
-    _teamBPlayers = List.generate(
-      _selectedPlayers,
-      (i) => Player(id: "B$i", name: "Player B${i+1}")
-    );
+  }
+
+  @override
+  void dispose() {
+    _matchNameController.dispose();
+    _teamANameController.dispose();
+    _teamBNameController.dispose();
+    super.dispose();
   }
 
   @override
@@ -157,6 +167,8 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
 
   Widget _buildPlayerInput(Player player, int index) {
     return Padding(
+      // Key by player so a field's typed text stays with its player when the squad size changes.
+      key: ValueKey(player.id),
       padding: const EdgeInsets.only(bottom: 8.0),
       child: Row(
         children: [
