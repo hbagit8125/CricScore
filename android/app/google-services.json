@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "533039039056",
+    "project_id": "cricscore-a5897",
+    "storage_bucket": "cricscore-a5897.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:533039039056:android:bccc8ef10573a94e6a8755",
+        "android_client_info": {
+          "package_name": "com.cricscore.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "533039039056-uca9ihhfm6968c6gj371aha7ungh8c9l.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.cricscore.app",
+            "certificate_hash": "a5bd7371bc0953ed81167afbdef8650a578caf2a"
+          }
+        },
+        {
+          "client_id": "533039039056-47k51emg7lihtsqrg7dqibq04j6ipajv.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDGnY2mxAp84BjZ1a58lpRZE1t7wRmf9Q0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "533039039056-47k51emg7lihtsqrg7dqibq04j6ipajv.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "533039039056-ep8nobs15tv8jj7n283vdpsnrkuuq3ee.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.cricscore.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

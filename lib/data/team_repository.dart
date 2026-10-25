@@ -5,10 +5,13 @@ import 'local/app_database.dart';
 
 /// Saved teams and players, reused when setting up matches.
 class TeamRepository {
-  TeamRepository(this._db, {DateTime Function()? clock})
+  TeamRepository(this._db, {this.ownerUid, DateTime Function()? clock})
     : _clock = clock ?? DateTime.now;
 
   final AppDatabase _db;
+
+  /// The signed-in account. Lists show only its teams; null shows all.
+  final String? ownerUid;
   final DateTime Function() _clock;
 
   /// Saves [team] and its players in batting order, replacing any earlier
@@ -22,6 +25,8 @@ class TeamRepository {
               id: team.id,
               name: team.name,
               updatedAt: _clock(),
+              ownerUid: Value(ownerUid),
+              needsUpload: const Value(true),
             ),
           );
       await (_db.delete(
@@ -44,7 +49,11 @@ class TeamRepository {
   /// Most recently used first. Players come back in batting order as one
   /// list; the caller decides who plays.
   Stream<List<({String id, String name, List<PlayerRef> players})>> watchAll() {
+    final uid = ownerUid;
     final query = _db.select(_db.teams)
+      ..where(
+        (t) => uid == null ? const Constant(true) : t.ownerUid.equals(uid),
+      )
       ..orderBy([(t) => OrderingTerm.desc(t.updatedAt)]);
     return query.watch().asyncMap((teams) async {
       final players = await (_db.select(

@@ -1,0 +1,79 @@
+rules_version = '2';
+
+// Who can read and change what in the cloud.
+//
+// - Matches belong to the account that created them. Only the owner can
+//   write them; the owner, or anyone once the owner shares it, can read.
+// - Each account's saved teams are private to it.
+// - Anything not listed here is refused.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isMe(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    match /users/{uid}/teams/{teamId} {
+      allow read, delete: if isMe(uid);
+      allow write: if isMe(uid)
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 100
+        && request.resource.data.players is list
+        && request.resource.data.players.size() <= 60;
+    }
+
+    match /matches/{matchId} {
+      function owner() {
+        return resource.data.ownerUid;
+      }
+
+      function shared() {
+        return resource.data.get('shared', false) == true;
+      }
+
+      // Fields are checked when present: a large upload states the owner
+      // in its early batches and fills in the rest at the end.
+      function validMatch(d) {
+        return d.ownerUid is string
+          && (!('title' in d) || (d.title is string && d.title.size() <= 200))
+          && (!('format' in d) || (d.format is string && d.format.size() <= 50))
+          && (!('summary' in d) || (d.summary is string && d.summary.size() <= 300))
+          && (!('status' in d) || d.status in ['inProgress', 'complete'])
+          && (!('eventCount' in d) || (d.eventCount is int && d.eventCount >= 0))
+          && (!('setup' in d) || d.setup is map)
+          && (!('shared' in d) || d.shared is bool);
+      }
+
+      allow read: if isMe(owner()) || shared();
+      allow create: if isMe(request.resource.data.ownerUid)
+        && validMatch(request.resource.data);
+      allow update: if isMe(owner())
+        && request.resource.data.ownerUid == owner()
+        && validMatch(request.resource.data);
+      allow delete: if isMe(owner());
+
+      match /events/{eventId} {
+        function matchNow() {
+          return get(/databases/$(database)/documents/matches/$(matchId)).data;
+        }
+
+        // After the batch, so events and their match can be written
+        // together in one batch.
+        function matchAfter() {
+          return getAfter(/databases/$(database)/documents/matches/$(matchId)).data;
+        }
+
+        allow read: if isMe(matchNow().ownerUid)
+          || matchNow().get('shared', false) == true;
+        allow create, update: if isMe(matchAfter().ownerUid)
+          && request.resource.data.seq is int
+          && request.resource.data.e is map;
+        allow delete: if isMe(matchNow().ownerUid);
+      }
+    }
+  }
+}

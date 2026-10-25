@@ -19,6 +19,14 @@ dependencies:
   drift: ^2.35.3
   drift_flutter: ^0.3.1
   uuid: ^4.6.0
+  # Firebase stays on the 4.x line (iOS SDK 12) until the Google Sign-In
+  # iOS plugin moves to GoogleSignIn-iOS 10: SDK 13 needs a newer
+  # gtm-session-fetcher than GoogleSignIn-iOS 9 accepts, and the iOS build
+  # cannot resolve both.
+  firebase_core: ^4.15.2
+  firebase_auth: ^6.7.1
+  cloud_firestore: ^6.10.2
+  google_sign_in: ^7.2.0
 
 dev_dependencies:
   flutter_test:
@@ -26,7 +34,6 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   drift_dev: ^2.35.2
   build_runner: ^2.16.1
-
 flutter:
   uses-material-design: true
   fonts:

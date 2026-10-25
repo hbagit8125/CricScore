@@ -3,10 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/router.dart';
+import '../../auth/auth_providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../data/local/app_database.dart';
 import '../../data/match_repository.dart';
 import '../../data/providers.dart';
+import '../../sync/sync_providers.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -23,7 +25,15 @@ class HomeScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('CricScore', style: text.headlineMedium),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text('CricScore', style: text.headlineMedium),
+                  ),
+                  const _SyncIndicator(),
+                  const _AccountMenu(),
+                ],
+              ),
               const SizedBox(height: 16),
               Expanded(
                 child: switch (matches) {
@@ -134,6 +144,49 @@ class _MatchTile extends StatelessWidget {
             ? Icon(Icons.circle, size: 10, color: colors.runs)
             : null,
       ),
+    );
+  }
+}
+
+/// A small cloud icon: hidden when all is uploaded.
+class _SyncIndicator extends ConsumerWidget {
+  const _SyncIndicator();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    return switch (ref.watch(syncControllerProvider)) {
+      SyncStatus.idle => const SizedBox.shrink(),
+      SyncStatus.syncing => Tooltip(
+        message: 'Saving to the cloud',
+        child: Icon(Icons.cloud_upload_outlined, color: colors.muted),
+      ),
+      SyncStatus.offline => Tooltip(
+        message:
+            'Offline. Matches are saved on this device and will upload '
+            'when you reconnect.',
+        child: Icon(Icons.cloud_off_outlined, color: colors.extras),
+      ),
+    };
+  }
+}
+
+class _AccountMenu extends ConsumerWidget {
+  const _AccountMenu();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(authStateProvider).value;
+    return PopupMenuButton<void>(
+      tooltip: 'Account',
+      icon: const Icon(Icons.account_circle_outlined),
+      itemBuilder: (context) => [
+        PopupMenuItem<void>(enabled: false, child: Text(user?.label ?? '')),
+        PopupMenuItem<void>(
+          onTap: () => ref.read(authServiceProvider).signOut(),
+          child: const Text('Sign out'),
+        ),
+      ],
     );
   }
 }

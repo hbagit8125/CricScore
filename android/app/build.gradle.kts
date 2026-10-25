@@ -1,8 +1,26 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
+    // START: FlutterFire Configuration
+    id("com.google.gms.google-services")
+    // END: FlutterFire Configuration
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+// Signing key for every build, so Google sign-in recognises the app.
+// Read from CRICSCORE_KEY_PROPERTIES or android/key.properties; neither the
+// key nor its passwords are kept in the repository. Without them, builds
+// fall back to the throwaway debug key and Google sign-in will not work.
+val keyProperties = Properties().apply {
+    val path = System.getenv("CRICSCORE_KEY_PROPERTIES")
+        ?: rootProject.file("key.properties").path
+    val f = file(path)
+    if (f.exists()) FileInputStream(f).use { load(it) }
+}
+val hasAppKey = keyProperties.getProperty("storeFile") != null
 
 android {
     namespace = "com.cricscore.cric_score"
@@ -15,7 +33,6 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.cricscore.app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
@@ -29,11 +46,25 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("app") {
+            if (hasAppKey) {
+                storeFile = file(keyProperties.getProperty("storeFile"))
+                storePassword = keyProperties.getProperty("storePassword")
+                keyAlias = keyProperties.getProperty("keyAlias")
+                keyPassword = keyProperties.getProperty("keyPassword")
+                storeType = "pkcs12"
+            }
+        }
+    }
+
     buildTypes {
+        val signing = signingConfigs.getByName(if (hasAppKey) "app" else "debug")
+        debug {
+            signingConfig = signing
+        }
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signing
         }
     }
 }

@@ -1,3 +1,4 @@
+import 'package:cric_score/auth/auth_providers.dart';
 import 'package:cric_score/data/local/app_database.dart';
 import 'package:cric_score/data/match_repository.dart';
 import 'package:cric_score/data/providers.dart';
@@ -7,6 +8,8 @@ import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../support/fake_auth.dart';
 
 MatchSetup setup({MatchRules rules = MatchRules.t20}) {
   TeamSheet team(String id, String name, String prefix) => TeamSheet(
@@ -30,11 +33,19 @@ void main() {
   late AppDatabase db;
   late ProviderContainer container;
 
-  setUp(() {
+  setUp(() async {
     db = AppDatabase(NativeDatabase.memory());
     container = ProviderContainer(
-      overrides: [databaseProvider.overrideWithValue(db)],
+      overrides: [
+        databaseProvider.overrideWithValue(db),
+        authServiceProvider.overrideWithValue(
+          FakeAuthService(signedIn: FakeAuthService.testUser),
+        ),
+      ],
     );
+    // Sign-in state arrives asynchronously, as in the app.
+    container.listen(currentUidProvider, (_, _) {});
+    await container.read(authStateProvider.future);
   });
 
   tearDown(() async {

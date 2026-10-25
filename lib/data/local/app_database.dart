@@ -25,6 +25,19 @@ class Matches extends Table {
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 
+  /// Account the match belongs to. Null for matches saved before sign-in
+  /// existed; they are claimed by the first account to sign in.
+  TextColumn get ownerUid => text().nullable()();
+
+  /// Leading events known to be in the cloud, unchanged since upload.
+  IntColumn get syncedEventCount => integer().withDefault(const Constant(0))();
+
+  /// Events stored in the cloud, so a shorter log can remove the rest.
+  IntColumn get remoteEventCount => integer().withDefault(const Constant(0))();
+
+  /// Match details changed since the last upload.
+  BoolColumn get needsUpload => boolean().withDefault(const Constant(true))();
+
   @override
   Set<Column<Object>> get primaryKey => {id};
 }
@@ -52,6 +65,8 @@ class Teams extends Table {
   TextColumn get id => text()();
   TextColumn get name => text()();
   DateTimeColumn get updatedAt => dateTime()();
+  TextColumn get ownerUid => text().nullable()();
+  BoolColumn get needsUpload => boolean().withDefault(const Constant(true))();
 
   @override
   Set<Column<Object>> get primaryKey => {id};
@@ -71,19 +86,74 @@ class Players extends Table {
   Set<Column<Object>> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [Matches, MatchEvents, Teams, Players])
+/// Small values kept on this device, such as its id.
+@DataClassName('SettingRow')
+class Settings extends Table {
+  TextColumn get key => text()();
+  TextColumn get value => text()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {key};
+}
+
+@DriftDatabase(tables: [Matches, MatchEvents, Teams, Players, Settings])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _open());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
+    onUpgrade: (m, from, to) async {
+      if (from < 2) {
+        await m.addColumn(matches, matches.ownerUid);
+        await m.addColumn(matches, matches.syncedEventCount);
+        await m.addColumn(matches, matches.remoteEventCount);
+        await m.addColumn(matches, matches.needsUpload);
+        await m.addColumn(teams, teams.ownerUid);
+        await m.addColumn(teams, teams.needsUpload);
+        await m.createTable(settings);
+      }
+    },
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON');
     },
   );
+
+  Future<String?> setting(String key) async => (await (select(
+    settings,
+  )..where((s) => s.key.equals(key))).getSingleOrNull())?.value;
+
+  Future<void> setSetting(String key, String value) => into(
+    settings,
+  ).insertOnConflictUpdate(SettingsCompanion.insert(key: key, value: value));
+
+  /// Matches deleted here that still need deleting from the cloud.
+  Future<List<String>> pendingDeletions() async {
+    final raw = await setting('pendingDeletions');
+    return raw == null || raw.isEmpty ? [] : raw.split(',');
+  }
+
+  Future<void> addPendingDeletion(String id) async {
+    final ids = {...await pendingDeletions(), id};
+    await setSetting('pendingDeletions', ids.join(','));
+  }
+
+  Future<void> clearPendingDeletion(String id) async {
+    final ids = (await pendingDeletions())..remove(id);
+    await setSetting('pendingDeletions', ids.join(','));
+  }
+
+  /// Gives matches and teams saved before accounts existed to [uid].
+  Future<void> claimUnowned(String uid) => transaction(() async {
+    await (update(matches)..where((m) => m.ownerUid.isNull())).write(
+      MatchesCompanion(ownerUid: Value(uid)),
+    );
+    await (update(teams)..where((t) => t.ownerUid.isNull())).write(
+      TeamsCompanion(ownerUid: Value(uid)),
+    );
+  });
 
   static QueryExecutor _open() => driftDatabase(
     name: 'cricscore',
