@@ -28,11 +28,18 @@ final class MatchSummary {
 /// Saves matches on the device. Every event is written as it is recorded,
 /// so a match survives the app closing at any moment.
 class MatchRepository {
-  MatchRepository(this._db, {DateTime Function()? clock, Uuid? uuid})
-    : _clock = clock ?? DateTime.now,
-      _uuid = uuid ?? const Uuid();
+  MatchRepository(
+    this._db, {
+    this.ownerUid,
+    DateTime Function()? clock,
+    Uuid? uuid,
+  }) : _clock = clock ?? DateTime.now,
+       _uuid = uuid ?? const Uuid();
 
   final AppDatabase _db;
+
+  /// The signed-in account. Lists show only its matches; null shows all.
+  final String? ownerUid;
   final DateTime Function() _clock;
   final Uuid _uuid;
 
@@ -53,6 +60,7 @@ class MatchRepository {
             summary: Value(_summaryOf(match)),
             createdAt: now,
             updatedAt: now,
+            ownerUid: Value(ownerUid),
           ),
         );
     return id;
@@ -94,6 +102,27 @@ class MatchRepository {
   /// Replaces the whole log, for undo and edits.
   Future<void> rewrite(String id, Match match) {
     return _db.transaction(() async {
+      // Events before the first change are still correct in the cloud.
+      final old =
+          await (_db.select(_db.matchEvents)
+                ..where((e) => e.matchId.equals(id))
+                ..orderBy([(e) => OrderingTerm.asc(e.seq)]))
+              .get();
+      var same = 0;
+      while (same < old.length &&
+          same < match.events.length &&
+          old[same].json ==
+              jsonEncode(MatchJson.eventToJson(match.events[same]))) {
+        same++;
+      }
+      final row = await (_db.select(
+        _db.matches,
+      )..where((m) => m.id.equals(id))).getSingle();
+      if (row.syncedEventCount > same) {
+        await (_db.update(_db.matches)..where((m) => m.id.equals(id))).write(
+          MatchesCompanion(syncedEventCount: Value(same)),
+        );
+      }
       await (_db.delete(
         _db.matchEvents,
       )..where((e) => e.matchId.equals(id))).go();
@@ -111,12 +140,22 @@ class MatchRepository {
     });
   }
 
-  Future<void> delete(String id) =>
-      (_db.delete(_db.matches)..where((m) => m.id.equals(id))).go();
+  /// Deletes the match here and, once online, from the cloud.
+  Future<void> delete(String id) => _db.transaction(() async {
+    final row = await (_db.select(
+      _db.matches,
+    )..where((m) => m.id.equals(id))).getSingleOrNull();
+    if (row?.ownerUid != null) await _db.addPendingDeletion(id);
+    await (_db.delete(_db.matches)..where((m) => m.id.equals(id))).go();
+  });
 
   /// Most recently played first.
   Stream<List<MatchSummary>> watchAll() {
+    final uid = ownerUid;
     final query = _db.select(_db.matches)
+      ..where(
+        (m) => uid == null ? const Constant(true) : m.ownerUid.equals(uid),
+      )
       ..orderBy([(m) => OrderingTerm.desc(m.updatedAt)]);
     return query.watch().map(
       (rows) => [
@@ -144,6 +183,7 @@ class MatchRepository {
         summary: Value(_summaryOf(match)),
         eventCount: Value(match.events.length),
         updatedAt: Value(_clock()),
+        needsUpload: const Value(true),
       ),
     );
   }

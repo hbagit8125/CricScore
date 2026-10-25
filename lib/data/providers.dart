@@ -1,6 +1,7 @@
 import 'package:cricket_engine/cricket_engine.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../auth/auth_providers.dart';
 import 'local/app_database.dart';
 import 'match_repository.dart';
 import 'team_repository.dart';
@@ -12,12 +13,20 @@ final databaseProvider = Provider<AppDatabase>((ref) {
   return db;
 });
 
+/// Matches of the signed-in account.
 final matchRepositoryProvider = Provider<MatchRepository>(
-  (ref) => MatchRepository(ref.watch(databaseProvider)),
+  (ref) => MatchRepository(
+    ref.watch(databaseProvider),
+    ownerUid: ref.watch(currentUidProvider),
+  ),
 );
 
+/// Teams of the signed-in account.
 final teamRepositoryProvider = Provider<TeamRepository>(
-  (ref) => TeamRepository(ref.watch(databaseProvider)),
+  (ref) => TeamRepository(
+    ref.watch(databaseProvider),
+    ownerUid: ref.watch(currentUidProvider),
+  ),
 );
 
 /// Saved matches, most recent first.

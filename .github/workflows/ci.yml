@@ -37,10 +37,35 @@ jobs:
       - name: Test app
         run: flutter test
 
+  rules:
+    name: Firestore security rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: firebase/rules-tests/package-lock.json
+      - run: npm ci --prefix firebase/rules-tests
+      - name: Test rules in the Firestore emulator
+        run: >-
+          npx --yes firebase-tools@15 emulators:exec --only firestore
+          --project cricscore-rules-test
+          "npm test --prefix firebase/rules-tests"
+
   android:
     name: Build Android
     needs: checks
     runs-on: ubuntu-latest
+    env:
+      # Secrets are not available to pull requests from forks; those builds
+      # use the throwaway debug key and Google sign-in will not work in them.
+      HAS_APP_KEY: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -53,7 +78,19 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get
-      # Debug-signed until release signing is added in phase P5.
+      - name: Use the app signing key
+        if: env.HAS_APP_KEY == 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/upload-keystore.p12"
+          {
+            echo "storeFile=$RUNNER_TEMP/upload-keystore.p12"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=upload"
+            echo "keyPassword=$KEYSTORE_PASSWORD"
+          } > android/key.properties
       - run: flutter build apk --release
       - uses: actions/upload-artifact@v4
         with:

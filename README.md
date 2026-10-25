@@ -10,7 +10,11 @@ The app is being rebuilt in phases (see `docs/` for the plan). The rebuild lives
 lib/                      Flutter app
   app/                    App root and routes (go_router)
   core/theme/             Colour tokens, fonts, light and dark themes
+  auth/                   Sign-in (Google, email) behind a small interface
   data/                   On-device storage: drift (SQLite) database, match and team repositories
+  sync/                   Cloud sync with Firestore
+firestore.rules           Who can read and change what in the cloud
+firebase/rules-tests/     Tests for those rules, run in the Firestore emulator
   features/<feature>/     One folder per screen area
 packages/cricket_engine/  Pure Dart scoring engine (no Flutter), tested on its own
 assets/fonts/             Barlow and Barlow Condensed (SIL Open Font License)
@@ -29,6 +33,32 @@ flutter pub get
 flutter run                 # on a connected device or emulator
 flutter run -d chrome       # in a browser
 ```
+
+## Firebase
+
+The app uses the Firebase project `cricscore-a5897` (Firestore in `asia-south1`). `lib/firebase_options.dart` and `android/app/google-services.json` identify the project; they are not secrets.
+
+Deploy security rules after changing `firestore.rules`:
+
+```
+firebase deploy --only firestore:rules
+```
+
+Test the rules locally (needs Java 21 and Node):
+
+```
+npm ci --prefix firebase/rules-tests
+firebase emulators:exec --only firestore --project cricscore-rules-test "npm test --prefix firebase/rules-tests"
+```
+
+## Android signing
+
+Google sign-in only works in builds signed with the app key, whose SHA-1 and SHA-256 fingerprints are registered in Firebase. The key is never committed.
+
+- Locally, put its details in `android/key.properties` (ignored by git) or point `CRICSCORE_KEY_PROPERTIES` at a file containing `storeFile`, `storePassword`, `keyAlias` and `keyPassword`.
+- In GitHub Actions, the secrets `ANDROID_KEYSTORE_BASE64` (the key file, base64-encoded) and `ANDROID_KEYSTORE_PASSWORD` are used. Without them the build falls back to a throwaway key.
+
+Keep a backup of the key: losing it means re-registering fingerprints, and once the app is in the Play Store, it is the upload key.
 
 ## Code generation
 

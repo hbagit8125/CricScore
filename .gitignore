@@ -46,3 +46,17 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# App signing key: never commit
+android/key.properties
+*.p12
+*.jks
+*.keystore
+
+# Firebase local files
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+ios/Runner/GoogleService-Info.plist
+firebase/rules-tests/node_modules/

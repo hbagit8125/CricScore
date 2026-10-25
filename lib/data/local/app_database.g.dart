@@ -101,6 +101,56 @@ class $MatchesTable extends Matches with TableInfo<$MatchesTable, MatchRow> {
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _ownerUidMeta = const VerificationMeta(
+    'ownerUid',
+  );
+  @override
+  late final GeneratedColumn<String> ownerUid = GeneratedColumn<String>(
+    'owner_uid',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _syncedEventCountMeta = const VerificationMeta(
+    'syncedEventCount',
+  );
+  @override
+  late final GeneratedColumn<int> syncedEventCount = GeneratedColumn<int>(
+    'synced_event_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _remoteEventCountMeta = const VerificationMeta(
+    'remoteEventCount',
+  );
+  @override
+  late final GeneratedColumn<int> remoteEventCount = GeneratedColumn<int>(
+    'remote_event_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _needsUploadMeta = const VerificationMeta(
+    'needsUpload',
+  );
+  @override
+  late final GeneratedColumn<bool> needsUpload = GeneratedColumn<bool>(
+    'needs_upload',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("needs_upload" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -112,6 +162,10 @@ class $MatchesTable extends Matches with TableInfo<$MatchesTable, MatchRow> {
     eventCount,
     createdAt,
     updatedAt,
+    ownerUid,
+    syncedEventCount,
+    remoteEventCount,
+    needsUpload,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -182,6 +236,39 @@ class $MatchesTable extends Matches with TableInfo<$MatchesTable, MatchRow> {
     } else if (isInserting) {
       context.missing(_updatedAtMeta);
     }
+    if (data.containsKey('owner_uid')) {
+      context.handle(
+        _ownerUidMeta,
+        ownerUid.isAcceptableOrUnknown(data['owner_uid']!, _ownerUidMeta),
+      );
+    }
+    if (data.containsKey('synced_event_count')) {
+      context.handle(
+        _syncedEventCountMeta,
+        syncedEventCount.isAcceptableOrUnknown(
+          data['synced_event_count']!,
+          _syncedEventCountMeta,
+        ),
+      );
+    }
+    if (data.containsKey('remote_event_count')) {
+      context.handle(
+        _remoteEventCountMeta,
+        remoteEventCount.isAcceptableOrUnknown(
+          data['remote_event_count']!,
+          _remoteEventCountMeta,
+        ),
+      );
+    }
+    if (data.containsKey('needs_upload')) {
+      context.handle(
+        _needsUploadMeta,
+        needsUpload.isAcceptableOrUnknown(
+          data['needs_upload']!,
+          _needsUploadMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -229,6 +316,22 @@ class $MatchesTable extends Matches with TableInfo<$MatchesTable, MatchRow> {
         DriftSqlType.dateTime,
         data['${effectivePrefix}updated_at'],
       )!,
+      ownerUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}owner_uid'],
+      ),
+      syncedEventCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}synced_event_count'],
+      )!,
+      remoteEventCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}remote_event_count'],
+      )!,
+      needsUpload: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}needs_upload'],
+      )!,
     );
   }
 
@@ -259,6 +362,19 @@ class MatchRow extends DataClass implements Insertable<MatchRow> {
   final int eventCount;
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  /// Account the match belongs to. Null for matches saved before sign-in
+  /// existed; they are claimed by the first account to sign in.
+  final String? ownerUid;
+
+  /// Leading events known to be in the cloud, unchanged since upload.
+  final int syncedEventCount;
+
+  /// Events stored in the cloud, so a shorter log can remove the rest.
+  final int remoteEventCount;
+
+  /// Match details changed since the last upload.
+  final bool needsUpload;
   const MatchRow({
     required this.id,
     required this.setupJson,
@@ -269,6 +385,10 @@ class MatchRow extends DataClass implements Insertable<MatchRow> {
     required this.eventCount,
     required this.createdAt,
     required this.updatedAt,
+    this.ownerUid,
+    required this.syncedEventCount,
+    required this.remoteEventCount,
+    required this.needsUpload,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -286,6 +406,12 @@ class MatchRow extends DataClass implements Insertable<MatchRow> {
     map['event_count'] = Variable<int>(eventCount);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
+    if (!nullToAbsent || ownerUid != null) {
+      map['owner_uid'] = Variable<String>(ownerUid);
+    }
+    map['synced_event_count'] = Variable<int>(syncedEventCount);
+    map['remote_event_count'] = Variable<int>(remoteEventCount);
+    map['needs_upload'] = Variable<bool>(needsUpload);
     return map;
   }
 
@@ -300,6 +426,12 @@ class MatchRow extends DataClass implements Insertable<MatchRow> {
       eventCount: Value(eventCount),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
+      ownerUid: ownerUid == null && nullToAbsent
+          ? const Value.absent()
+          : Value(ownerUid),
+      syncedEventCount: Value(syncedEventCount),
+      remoteEventCount: Value(remoteEventCount),
+      needsUpload: Value(needsUpload),
     );
   }
 
@@ -320,6 +452,10 @@ class MatchRow extends DataClass implements Insertable<MatchRow> {
       eventCount: serializer.fromJson<int>(json['eventCount']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      ownerUid: serializer.fromJson<String?>(json['ownerUid']),
+      syncedEventCount: serializer.fromJson<int>(json['syncedEventCount']),
+      remoteEventCount: serializer.fromJson<int>(json['remoteEventCount']),
+      needsUpload: serializer.fromJson<bool>(json['needsUpload']),
     );
   }
   @override
@@ -337,6 +473,10 @@ class MatchRow extends DataClass implements Insertable<MatchRow> {
       'eventCount': serializer.toJson<int>(eventCount),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'ownerUid': serializer.toJson<String?>(ownerUid),
+      'syncedEventCount': serializer.toJson<int>(syncedEventCount),
+      'remoteEventCount': serializer.toJson<int>(remoteEventCount),
+      'needsUpload': serializer.toJson<bool>(needsUpload),
     };
   }
 
@@ -350,6 +490,10 @@ class MatchRow extends DataClass implements Insertable<MatchRow> {
     int? eventCount,
     DateTime? createdAt,
     DateTime? updatedAt,
+    Value<String?> ownerUid = const Value.absent(),
+    int? syncedEventCount,
+    int? remoteEventCount,
+    bool? needsUpload,
   }) => MatchRow(
     id: id ?? this.id,
     setupJson: setupJson ?? this.setupJson,
@@ -360,6 +504,10 @@ class MatchRow extends DataClass implements Insertable<MatchRow> {
     eventCount: eventCount ?? this.eventCount,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
+    ownerUid: ownerUid.present ? ownerUid.value : this.ownerUid,
+    syncedEventCount: syncedEventCount ?? this.syncedEventCount,
+    remoteEventCount: remoteEventCount ?? this.remoteEventCount,
+    needsUpload: needsUpload ?? this.needsUpload,
   );
   MatchRow copyWithCompanion(MatchesCompanion data) {
     return MatchRow(
@@ -374,6 +522,16 @@ class MatchRow extends DataClass implements Insertable<MatchRow> {
           : this.eventCount,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      ownerUid: data.ownerUid.present ? data.ownerUid.value : this.ownerUid,
+      syncedEventCount: data.syncedEventCount.present
+          ? data.syncedEventCount.value
+          : this.syncedEventCount,
+      remoteEventCount: data.remoteEventCount.present
+          ? data.remoteEventCount.value
+          : this.remoteEventCount,
+      needsUpload: data.needsUpload.present
+          ? data.needsUpload.value
+          : this.needsUpload,
     );
   }
 
@@ -388,7 +546,11 @@ class MatchRow extends DataClass implements Insertable<MatchRow> {
           ..write('summary: $summary, ')
           ..write('eventCount: $eventCount, ')
           ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('ownerUid: $ownerUid, ')
+          ..write('syncedEventCount: $syncedEventCount, ')
+          ..write('remoteEventCount: $remoteEventCount, ')
+          ..write('needsUpload: $needsUpload')
           ..write(')'))
         .toString();
   }
@@ -404,6 +566,10 @@ class MatchRow extends DataClass implements Insertable<MatchRow> {
     eventCount,
     createdAt,
     updatedAt,
+    ownerUid,
+    syncedEventCount,
+    remoteEventCount,
+    needsUpload,
   );
   @override
   bool operator ==(Object other) =>
@@ -417,7 +583,11 @@ class MatchRow extends DataClass implements Insertable<MatchRow> {
           other.summary == this.summary &&
           other.eventCount == this.eventCount &&
           other.createdAt == this.createdAt &&
-          other.updatedAt == this.updatedAt);
+          other.updatedAt == this.updatedAt &&
+          other.ownerUid == this.ownerUid &&
+          other.syncedEventCount == this.syncedEventCount &&
+          other.remoteEventCount == this.remoteEventCount &&
+          other.needsUpload == this.needsUpload);
 }
 
 class MatchesCompanion extends UpdateCompanion<MatchRow> {
@@ -430,6 +600,10 @@ class MatchesCompanion extends UpdateCompanion<MatchRow> {
   final Value<int> eventCount;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
+  final Value<String?> ownerUid;
+  final Value<int> syncedEventCount;
+  final Value<int> remoteEventCount;
+  final Value<bool> needsUpload;
   final Value<int> rowid;
   const MatchesCompanion({
     this.id = const Value.absent(),
@@ -441,6 +615,10 @@ class MatchesCompanion extends UpdateCompanion<MatchRow> {
     this.eventCount = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.ownerUid = const Value.absent(),
+    this.syncedEventCount = const Value.absent(),
+    this.remoteEventCount = const Value.absent(),
+    this.needsUpload = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   MatchesCompanion.insert({
@@ -453,6 +631,10 @@ class MatchesCompanion extends UpdateCompanion<MatchRow> {
     this.eventCount = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
+    this.ownerUid = const Value.absent(),
+    this.syncedEventCount = const Value.absent(),
+    this.remoteEventCount = const Value.absent(),
+    this.needsUpload = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        setupJson = Value(setupJson),
@@ -471,6 +653,10 @@ class MatchesCompanion extends UpdateCompanion<MatchRow> {
     Expression<int>? eventCount,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
+    Expression<String>? ownerUid,
+    Expression<int>? syncedEventCount,
+    Expression<int>? remoteEventCount,
+    Expression<bool>? needsUpload,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -483,6 +669,10 @@ class MatchesCompanion extends UpdateCompanion<MatchRow> {
       if (eventCount != null) 'event_count': eventCount,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
+      if (ownerUid != null) 'owner_uid': ownerUid,
+      if (syncedEventCount != null) 'synced_event_count': syncedEventCount,
+      if (remoteEventCount != null) 'remote_event_count': remoteEventCount,
+      if (needsUpload != null) 'needs_upload': needsUpload,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -497,6 +687,10 @@ class MatchesCompanion extends UpdateCompanion<MatchRow> {
     Value<int>? eventCount,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
+    Value<String?>? ownerUid,
+    Value<int>? syncedEventCount,
+    Value<int>? remoteEventCount,
+    Value<bool>? needsUpload,
     Value<int>? rowid,
   }) {
     return MatchesCompanion(
@@ -509,6 +703,10 @@ class MatchesCompanion extends UpdateCompanion<MatchRow> {
       eventCount: eventCount ?? this.eventCount,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      ownerUid: ownerUid ?? this.ownerUid,
+      syncedEventCount: syncedEventCount ?? this.syncedEventCount,
+      remoteEventCount: remoteEventCount ?? this.remoteEventCount,
+      needsUpload: needsUpload ?? this.needsUpload,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -545,6 +743,18 @@ class MatchesCompanion extends UpdateCompanion<MatchRow> {
     if (updatedAt.present) {
       map['updated_at'] = Variable<DateTime>(updatedAt.value);
     }
+    if (ownerUid.present) {
+      map['owner_uid'] = Variable<String>(ownerUid.value);
+    }
+    if (syncedEventCount.present) {
+      map['synced_event_count'] = Variable<int>(syncedEventCount.value);
+    }
+    if (remoteEventCount.present) {
+      map['remote_event_count'] = Variable<int>(remoteEventCount.value);
+    }
+    if (needsUpload.present) {
+      map['needs_upload'] = Variable<bool>(needsUpload.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -563,6 +773,10 @@ class MatchesCompanion extends UpdateCompanion<MatchRow> {
           ..write('eventCount: $eventCount, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('ownerUid: $ownerUid, ')
+          ..write('syncedEventCount: $syncedEventCount, ')
+          ..write('remoteEventCount: $remoteEventCount, ')
+          ..write('needsUpload: $needsUpload, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -870,8 +1084,40 @@ class $TeamsTable extends Teams with TableInfo<$TeamsTable, TeamRow> {
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _ownerUidMeta = const VerificationMeta(
+    'ownerUid',
+  );
   @override
-  List<GeneratedColumn> get $columns => [id, name, updatedAt];
+  late final GeneratedColumn<String> ownerUid = GeneratedColumn<String>(
+    'owner_uid',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _needsUploadMeta = const VerificationMeta(
+    'needsUpload',
+  );
+  @override
+  late final GeneratedColumn<bool> needsUpload = GeneratedColumn<bool>(
+    'needs_upload',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("needs_upload" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    name,
+    updatedAt,
+    ownerUid,
+    needsUpload,
+  ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -905,6 +1151,21 @@ class $TeamsTable extends Teams with TableInfo<$TeamsTable, TeamRow> {
     } else if (isInserting) {
       context.missing(_updatedAtMeta);
     }
+    if (data.containsKey('owner_uid')) {
+      context.handle(
+        _ownerUidMeta,
+        ownerUid.isAcceptableOrUnknown(data['owner_uid']!, _ownerUidMeta),
+      );
+    }
+    if (data.containsKey('needs_upload')) {
+      context.handle(
+        _needsUploadMeta,
+        needsUpload.isAcceptableOrUnknown(
+          data['needs_upload']!,
+          _needsUploadMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -926,6 +1187,14 @@ class $TeamsTable extends Teams with TableInfo<$TeamsTable, TeamRow> {
         DriftSqlType.dateTime,
         data['${effectivePrefix}updated_at'],
       )!,
+      ownerUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}owner_uid'],
+      ),
+      needsUpload: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}needs_upload'],
+      )!,
     );
   }
 
@@ -939,10 +1208,14 @@ class TeamRow extends DataClass implements Insertable<TeamRow> {
   final String id;
   final String name;
   final DateTime updatedAt;
+  final String? ownerUid;
+  final bool needsUpload;
   const TeamRow({
     required this.id,
     required this.name,
     required this.updatedAt,
+    this.ownerUid,
+    required this.needsUpload,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -950,6 +1223,10 @@ class TeamRow extends DataClass implements Insertable<TeamRow> {
     map['id'] = Variable<String>(id);
     map['name'] = Variable<String>(name);
     map['updated_at'] = Variable<DateTime>(updatedAt);
+    if (!nullToAbsent || ownerUid != null) {
+      map['owner_uid'] = Variable<String>(ownerUid);
+    }
+    map['needs_upload'] = Variable<bool>(needsUpload);
     return map;
   }
 
@@ -958,6 +1235,10 @@ class TeamRow extends DataClass implements Insertable<TeamRow> {
       id: Value(id),
       name: Value(name),
       updatedAt: Value(updatedAt),
+      ownerUid: ownerUid == null && nullToAbsent
+          ? const Value.absent()
+          : Value(ownerUid),
+      needsUpload: Value(needsUpload),
     );
   }
 
@@ -970,6 +1251,8 @@ class TeamRow extends DataClass implements Insertable<TeamRow> {
       id: serializer.fromJson<String>(json['id']),
       name: serializer.fromJson<String>(json['name']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      ownerUid: serializer.fromJson<String?>(json['ownerUid']),
+      needsUpload: serializer.fromJson<bool>(json['needsUpload']),
     );
   }
   @override
@@ -979,19 +1262,33 @@ class TeamRow extends DataClass implements Insertable<TeamRow> {
       'id': serializer.toJson<String>(id),
       'name': serializer.toJson<String>(name),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'ownerUid': serializer.toJson<String?>(ownerUid),
+      'needsUpload': serializer.toJson<bool>(needsUpload),
     };
   }
 
-  TeamRow copyWith({String? id, String? name, DateTime? updatedAt}) => TeamRow(
+  TeamRow copyWith({
+    String? id,
+    String? name,
+    DateTime? updatedAt,
+    Value<String?> ownerUid = const Value.absent(),
+    bool? needsUpload,
+  }) => TeamRow(
     id: id ?? this.id,
     name: name ?? this.name,
     updatedAt: updatedAt ?? this.updatedAt,
+    ownerUid: ownerUid.present ? ownerUid.value : this.ownerUid,
+    needsUpload: needsUpload ?? this.needsUpload,
   );
   TeamRow copyWithCompanion(TeamsCompanion data) {
     return TeamRow(
       id: data.id.present ? data.id.value : this.id,
       name: data.name.present ? data.name.value : this.name,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      ownerUid: data.ownerUid.present ? data.ownerUid.value : this.ownerUid,
+      needsUpload: data.needsUpload.present
+          ? data.needsUpload.value
+          : this.needsUpload,
     );
   }
 
@@ -1000,37 +1297,47 @@ class TeamRow extends DataClass implements Insertable<TeamRow> {
     return (StringBuffer('TeamRow(')
           ..write('id: $id, ')
           ..write('name: $name, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('ownerUid: $ownerUid, ')
+          ..write('needsUpload: $needsUpload')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, name, updatedAt);
+  int get hashCode => Object.hash(id, name, updatedAt, ownerUid, needsUpload);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is TeamRow &&
           other.id == this.id &&
           other.name == this.name &&
-          other.updatedAt == this.updatedAt);
+          other.updatedAt == this.updatedAt &&
+          other.ownerUid == this.ownerUid &&
+          other.needsUpload == this.needsUpload);
 }
 
 class TeamsCompanion extends UpdateCompanion<TeamRow> {
   final Value<String> id;
   final Value<String> name;
   final Value<DateTime> updatedAt;
+  final Value<String?> ownerUid;
+  final Value<bool> needsUpload;
   final Value<int> rowid;
   const TeamsCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.ownerUid = const Value.absent(),
+    this.needsUpload = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TeamsCompanion.insert({
     required String id,
     required String name,
     required DateTime updatedAt,
+    this.ownerUid = const Value.absent(),
+    this.needsUpload = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -1039,12 +1346,16 @@ class TeamsCompanion extends UpdateCompanion<TeamRow> {
     Expression<String>? id,
     Expression<String>? name,
     Expression<DateTime>? updatedAt,
+    Expression<String>? ownerUid,
+    Expression<bool>? needsUpload,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (name != null) 'name': name,
       if (updatedAt != null) 'updated_at': updatedAt,
+      if (ownerUid != null) 'owner_uid': ownerUid,
+      if (needsUpload != null) 'needs_upload': needsUpload,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1053,12 +1364,16 @@ class TeamsCompanion extends UpdateCompanion<TeamRow> {
     Value<String>? id,
     Value<String>? name,
     Value<DateTime>? updatedAt,
+    Value<String?>? ownerUid,
+    Value<bool>? needsUpload,
     Value<int>? rowid,
   }) {
     return TeamsCompanion(
       id: id ?? this.id,
       name: name ?? this.name,
       updatedAt: updatedAt ?? this.updatedAt,
+      ownerUid: ownerUid ?? this.ownerUid,
+      needsUpload: needsUpload ?? this.needsUpload,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1075,6 +1390,12 @@ class TeamsCompanion extends UpdateCompanion<TeamRow> {
     if (updatedAt.present) {
       map['updated_at'] = Variable<DateTime>(updatedAt.value);
     }
+    if (ownerUid.present) {
+      map['owner_uid'] = Variable<String>(ownerUid.value);
+    }
+    if (needsUpload.present) {
+      map['needs_upload'] = Variable<bool>(needsUpload.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1087,6 +1408,8 @@ class TeamsCompanion extends UpdateCompanion<TeamRow> {
           ..write('id: $id, ')
           ..write('name: $name, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('ownerUid: $ownerUid, ')
+          ..write('needsUpload: $needsUpload, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -1403,6 +1726,214 @@ class PlayersCompanion extends UpdateCompanion<PlayerRow> {
   }
 }
 
+class $SettingsTable extends Settings
+    with TableInfo<$SettingsTable, SettingRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SettingsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _keyMeta = const VerificationMeta('key');
+  @override
+  late final GeneratedColumn<String> key = GeneratedColumn<String>(
+    'key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _valueMeta = const VerificationMeta('value');
+  @override
+  late final GeneratedColumn<String> value = GeneratedColumn<String>(
+    'value',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [key, value];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'settings';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SettingRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('key')) {
+      context.handle(
+        _keyMeta,
+        key.isAcceptableOrUnknown(data['key']!, _keyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_keyMeta);
+    }
+    if (data.containsKey('value')) {
+      context.handle(
+        _valueMeta,
+        value.isAcceptableOrUnknown(data['value']!, _valueMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_valueMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {key};
+  @override
+  SettingRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SettingRow(
+      key: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}key'],
+      )!,
+      value: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}value'],
+      )!,
+    );
+  }
+
+  @override
+  $SettingsTable createAlias(String alias) {
+    return $SettingsTable(attachedDatabase, alias);
+  }
+}
+
+class SettingRow extends DataClass implements Insertable<SettingRow> {
+  final String key;
+  final String value;
+  const SettingRow({required this.key, required this.value});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['key'] = Variable<String>(key);
+    map['value'] = Variable<String>(value);
+    return map;
+  }
+
+  SettingsCompanion toCompanion(bool nullToAbsent) {
+    return SettingsCompanion(key: Value(key), value: Value(value));
+  }
+
+  factory SettingRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SettingRow(
+      key: serializer.fromJson<String>(json['key']),
+      value: serializer.fromJson<String>(json['value']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'key': serializer.toJson<String>(key),
+      'value': serializer.toJson<String>(value),
+    };
+  }
+
+  SettingRow copyWith({String? key, String? value}) =>
+      SettingRow(key: key ?? this.key, value: value ?? this.value);
+  SettingRow copyWithCompanion(SettingsCompanion data) {
+    return SettingRow(
+      key: data.key.present ? data.key.value : this.key,
+      value: data.value.present ? data.value.value : this.value,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SettingRow(')
+          ..write('key: $key, ')
+          ..write('value: $value')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(key, value);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SettingRow &&
+          other.key == this.key &&
+          other.value == this.value);
+}
+
+class SettingsCompanion extends UpdateCompanion<SettingRow> {
+  final Value<String> key;
+  final Value<String> value;
+  final Value<int> rowid;
+  const SettingsCompanion({
+    this.key = const Value.absent(),
+    this.value = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SettingsCompanion.insert({
+    required String key,
+    required String value,
+    this.rowid = const Value.absent(),
+  }) : key = Value(key),
+       value = Value(value);
+  static Insertable<SettingRow> custom({
+    Expression<String>? key,
+    Expression<String>? value,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (key != null) 'key': key,
+      if (value != null) 'value': value,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SettingsCompanion copyWith({
+    Value<String>? key,
+    Value<String>? value,
+    Value<int>? rowid,
+  }) {
+    return SettingsCompanion(
+      key: key ?? this.key,
+      value: value ?? this.value,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (key.present) {
+      map['key'] = Variable<String>(key.value);
+    }
+    if (value.present) {
+      map['value'] = Variable<String>(value.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SettingsCompanion(')
+          ..write('key: $key, ')
+          ..write('value: $value, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -1410,6 +1941,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $MatchEventsTable matchEvents = $MatchEventsTable(this);
   late final $TeamsTable teams = $TeamsTable(this);
   late final $PlayersTable players = $PlayersTable(this);
+  late final $SettingsTable settings = $SettingsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -1419,6 +1951,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     matchEvents,
     teams,
     players,
+    settings,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -1450,6 +1983,10 @@ typedef $$MatchesTableCreateCompanionBuilder =
       Value<int> eventCount,
       required DateTime createdAt,
       required DateTime updatedAt,
+      Value<String?> ownerUid,
+      Value<int> syncedEventCount,
+      Value<int> remoteEventCount,
+      Value<bool> needsUpload,
       Value<int> rowid,
     });
 typedef $$MatchesTableUpdateCompanionBuilder =
@@ -1463,6 +2000,10 @@ typedef $$MatchesTableUpdateCompanionBuilder =
       Value<int> eventCount,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
+      Value<String?> ownerUid,
+      Value<int> syncedEventCount,
+      Value<int> remoteEventCount,
+      Value<bool> needsUpload,
       Value<int> rowid,
     });
 
@@ -1541,6 +2082,26 @@ class $$MatchesTableFilterComposer
 
   ColumnFilters<DateTime> get updatedAt => $composableBuilder(
     column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get ownerUid => $composableBuilder(
+    column: $table.ownerUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get syncedEventCount => $composableBuilder(
+    column: $table.syncedEventCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get remoteEventCount => $composableBuilder(
+    column: $table.remoteEventCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get needsUpload => $composableBuilder(
+    column: $table.needsUpload,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -1623,6 +2184,26 @@ class $$MatchesTableOrderingComposer
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get ownerUid => $composableBuilder(
+    column: $table.ownerUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get syncedEventCount => $composableBuilder(
+    column: $table.syncedEventCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get remoteEventCount => $composableBuilder(
+    column: $table.remoteEventCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get needsUpload => $composableBuilder(
+    column: $table.needsUpload,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$MatchesTableAnnotationComposer
@@ -1662,6 +2243,24 @@ class $$MatchesTableAnnotationComposer
 
   GeneratedColumn<DateTime> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get ownerUid =>
+      $composableBuilder(column: $table.ownerUid, builder: (column) => column);
+
+  GeneratedColumn<int> get syncedEventCount => $composableBuilder(
+    column: $table.syncedEventCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get remoteEventCount => $composableBuilder(
+    column: $table.remoteEventCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get needsUpload => $composableBuilder(
+    column: $table.needsUpload,
+    builder: (column) => column,
+  );
 
   Expression<T> matchEventsRefs<T extends Object>(
     Expression<T> Function($$MatchEventsTableAnnotationComposer a) f,
@@ -1726,6 +2325,10 @@ class $$MatchesTableTableManager
                 Value<int> eventCount = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
+                Value<String?> ownerUid = const Value.absent(),
+                Value<int> syncedEventCount = const Value.absent(),
+                Value<int> remoteEventCount = const Value.absent(),
+                Value<bool> needsUpload = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MatchesCompanion(
                 id: id,
@@ -1737,6 +2340,10 @@ class $$MatchesTableTableManager
                 eventCount: eventCount,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
+                ownerUid: ownerUid,
+                syncedEventCount: syncedEventCount,
+                remoteEventCount: remoteEventCount,
+                needsUpload: needsUpload,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -1750,6 +2357,10 @@ class $$MatchesTableTableManager
                 Value<int> eventCount = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
+                Value<String?> ownerUid = const Value.absent(),
+                Value<int> syncedEventCount = const Value.absent(),
+                Value<int> remoteEventCount = const Value.absent(),
+                Value<bool> needsUpload = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MatchesCompanion.insert(
                 id: id,
@@ -1761,6 +2372,10 @@ class $$MatchesTableTableManager
                 eventCount: eventCount,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
+                ownerUid: ownerUid,
+                syncedEventCount: syncedEventCount,
+                remoteEventCount: remoteEventCount,
+                needsUpload: needsUpload,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -2103,6 +2718,8 @@ typedef $$TeamsTableCreateCompanionBuilder =
       required String id,
       required String name,
       required DateTime updatedAt,
+      Value<String?> ownerUid,
+      Value<bool> needsUpload,
       Value<int> rowid,
     });
 typedef $$TeamsTableUpdateCompanionBuilder =
@@ -2110,6 +2727,8 @@ typedef $$TeamsTableUpdateCompanionBuilder =
       Value<String> id,
       Value<String> name,
       Value<DateTime> updatedAt,
+      Value<String?> ownerUid,
+      Value<bool> needsUpload,
       Value<int> rowid,
     });
 
@@ -2157,6 +2776,16 @@ class $$TeamsTableFilterComposer extends Composer<_$AppDatabase, $TeamsTable> {
 
   ColumnFilters<DateTime> get updatedAt => $composableBuilder(
     column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get ownerUid => $composableBuilder(
+    column: $table.ownerUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get needsUpload => $composableBuilder(
+    column: $table.needsUpload,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2209,6 +2838,16 @@ class $$TeamsTableOrderingComposer
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get ownerUid => $composableBuilder(
+    column: $table.ownerUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get needsUpload => $composableBuilder(
+    column: $table.needsUpload,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$TeamsTableAnnotationComposer
@@ -2228,6 +2867,14 @@ class $$TeamsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get ownerUid =>
+      $composableBuilder(column: $table.ownerUid, builder: (column) => column);
+
+  GeneratedColumn<bool> get needsUpload => $composableBuilder(
+    column: $table.needsUpload,
+    builder: (column) => column,
+  );
 
   Expression<T> playersRefs<T extends Object>(
     Expression<T> Function($$PlayersTableAnnotationComposer a) f,
@@ -2286,11 +2933,15 @@ class $$TeamsTableTableManager
                 Value<String> id = const Value.absent(),
                 Value<String> name = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
+                Value<String?> ownerUid = const Value.absent(),
+                Value<bool> needsUpload = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TeamsCompanion(
                 id: id,
                 name: name,
                 updatedAt: updatedAt,
+                ownerUid: ownerUid,
+                needsUpload: needsUpload,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -2298,11 +2949,15 @@ class $$TeamsTableTableManager
                 required String id,
                 required String name,
                 required DateTime updatedAt,
+                Value<String?> ownerUid = const Value.absent(),
+                Value<bool> needsUpload = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TeamsCompanion.insert(
                 id: id,
                 name: name,
                 updatedAt: updatedAt,
+                ownerUid: ownerUid,
+                needsUpload: needsUpload,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -2657,6 +3312,151 @@ typedef $$PlayersTableProcessedTableManager =
       PlayerRow,
       PrefetchHooks Function({bool teamId})
     >;
+typedef $$SettingsTableCreateCompanionBuilder =
+    SettingsCompanion Function({
+      required String key,
+      required String value,
+      Value<int> rowid,
+    });
+typedef $$SettingsTableUpdateCompanionBuilder =
+    SettingsCompanion Function({
+      Value<String> key,
+      Value<String> value,
+      Value<int> rowid,
+    });
+
+class $$SettingsTableFilterComposer
+    extends Composer<_$AppDatabase, $SettingsTable> {
+  $$SettingsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get key => $composableBuilder(
+    column: $table.key,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get value => $composableBuilder(
+    column: $table.value,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SettingsTableOrderingComposer
+    extends Composer<_$AppDatabase, $SettingsTable> {
+  $$SettingsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get key => $composableBuilder(
+    column: $table.key,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get value => $composableBuilder(
+    column: $table.value,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SettingsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $SettingsTable> {
+  $$SettingsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get key =>
+      $composableBuilder(column: $table.key, builder: (column) => column);
+
+  GeneratedColumn<String> get value =>
+      $composableBuilder(column: $table.value, builder: (column) => column);
+}
+
+class $$SettingsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $SettingsTable,
+          SettingRow,
+          $$SettingsTableFilterComposer,
+          $$SettingsTableOrderingComposer,
+          $$SettingsTableAnnotationComposer,
+          $$SettingsTableCreateCompanionBuilder,
+          $$SettingsTableUpdateCompanionBuilder,
+          (
+            SettingRow,
+            BaseReferences<_$AppDatabase, $SettingsTable, SettingRow>,
+          ),
+          SettingRow,
+          PrefetchHooks Function()
+        > {
+  $$SettingsTableTableManager(_$AppDatabase db, $SettingsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SettingsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SettingsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SettingsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> key = const Value.absent(),
+                Value<String> value = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SettingsCompanion(key: key, value: value, rowid: rowid),
+          createCompanionCallback:
+              ({
+                required String key,
+                required String value,
+                Value<int> rowid = const Value.absent(),
+              }) => SettingsCompanion.insert(
+                key: key,
+                value: value,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$SettingsTable, SettingRow>(table),
+                  BaseReferences<_$AppDatabase, $SettingsTable, SettingRow>(
+                    db,
+                    table,
+                    e,
+                  ),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SettingsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $SettingsTable,
+      SettingRow,
+      $$SettingsTableFilterComposer,
+      $$SettingsTableOrderingComposer,
+      $$SettingsTableAnnotationComposer,
+      $$SettingsTableCreateCompanionBuilder,
+      $$SettingsTableUpdateCompanionBuilder,
+      (SettingRow, BaseReferences<_$AppDatabase, $SettingsTable, SettingRow>),
+      SettingRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -2669,4 +3469,6 @@ class $AppDatabaseManager {
       $$TeamsTableTableManager(_db, _db.teams);
   $$PlayersTableTableManager get players =>
       $$PlayersTableTableManager(_db, _db.players);
+  $$SettingsTableTableManager get settings =>
+      $$SettingsTableTableManager(_db, _db.settings);
 }
