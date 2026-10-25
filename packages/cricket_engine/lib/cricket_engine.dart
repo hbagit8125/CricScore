@@ -12,6 +12,7 @@ export 'src/model/events.dart';
 export 'src/model/match_setup.dart';
 export 'src/model/team.dart';
 export 'src/rules/match_rules.dart';
+export 'src/serialization/match_json.dart';
 export 'src/state/cards.dart';
 export 'src/state/innings_state.dart';
 export 'src/state/match_state.dart';

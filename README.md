@@ -10,6 +10,7 @@ The app is being rebuilt in phases (see `docs/` for the plan). The rebuild lives
 lib/                      Flutter app
   app/                    App root and routes (go_router)
   core/theme/             Colour tokens, fonts, light and dark themes
+  data/                   On-device storage: drift (SQLite) database, match and team repositories
   features/<feature>/     One folder per screen area
 packages/cricket_engine/  Pure Dart scoring engine (no Flutter), tested on its own
 assets/fonts/             Barlow and Barlow Condensed (SIL Open Font License)
@@ -28,6 +29,18 @@ flutter pub get
 flutter run                 # on a connected device or emulator
 flutter run -d chrome       # in a browser
 ```
+
+## Code generation
+
+The database code in `lib/data/local/app_database.g.dart` is generated. After changing the tables, regenerate it and commit the result:
+
+```
+dart run build_runner build --delete-conflicting-outputs --force-jit
+```
+
+`--force-jit` avoids a compile step that Windows Application Control blocks on some machines.
+
+The web build stores data in the browser through `web/sqlite3.wasm` and `web/drift_worker.js`, taken from the drift release matching the `drift` version in `pubspec.lock`. Update both files whenever `drift` is upgraded.
 
 ## Checks
 
