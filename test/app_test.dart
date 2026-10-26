@@ -82,14 +82,12 @@ void main() {
     await pumpApp(tester);
 
     await tester.tap(find.text('New match'));
-    await tester.pumpAndSettle();
-    expect(
-      find.text('Match setup arrives with the new scoring screens.'),
-      findsOneWidget,
-    );
+    await settle(tester);
+    expect(find.text('FORMAT'), findsOneWidget);
+    expect(find.text('T20'), findsOneWidget);
 
     await tester.pageBack();
-    await tester.pumpAndSettle();
+    await settle(tester);
     expect(find.text('No matches yet'), findsOneWidget);
     await unmountApp(tester);
   });
