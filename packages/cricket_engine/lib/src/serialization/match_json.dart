@@ -90,7 +90,11 @@ abstract final class MatchJson {
       'striker': strikerId,
       'nonStriker': nonStrikerId,
     },
-    BowlerSelected(:final bowlerId) => {'type': 'bowler', 'player': bowlerId},
+    BowlerSelected(:final bowlerId, :final umpireAllowed) => {
+      'type': 'bowler',
+      'player': bowlerId,
+      if (umpireAllowed) 'umpireAllowed': true,
+    },
     BatterIn(:final batterId) => {'type': 'batterIn', 'player': batterId},
     SwapStrike() => {'type': 'swapStrike'},
     Retired(:final batterId, :final out) => {
@@ -138,7 +142,10 @@ abstract final class MatchJson {
         strikerId: s('striker'),
         nonStrikerId: s('nonStriker'),
       ),
-      'bowler' => BowlerSelected(s('player')),
+      'bowler' => BowlerSelected(
+        s('player'),
+        umpireAllowed: j['umpireAllowed'] as bool? ?? false,
+      ),
       'batterIn' => BatterIn(s('player')),
       'swapStrike' => const SwapStrike(),
       'retired' => Retired(s('player'), out: j['out']! as bool),

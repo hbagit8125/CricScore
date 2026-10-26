@@ -18,6 +18,7 @@ class Keypad extends StatelessWidget {
     required this.onUndo,
     required this.onMore,
     required this.canUndo,
+    this.leftHanded = false,
   });
 
   final ArmedExtra armed;
@@ -27,6 +28,9 @@ class Keypad extends StatelessWidget {
   final VoidCallback onUndo;
   final VoidCallback onMore;
   final bool canUndo;
+
+  /// Wicket and undo on the left, for scoring with the left thumb.
+  final bool leftHanded;
 
   @override
   Widget build(BuildContext context) {
@@ -64,6 +68,24 @@ class Keypad extends StatelessWidget {
       );
     }
 
+    final actions = [
+      _Key(
+        key: const Key('wicket'),
+        label: 'W',
+        semantics: 'Wicket',
+        onTap: onWicket,
+        fill: colors.wicket,
+        ink: colors.onSemantic,
+      ),
+      _Key(
+        key: const Key('undo'),
+        label: 'Undo',
+        semantics: 'Undo last action',
+        onTap: canUndo ? onUndo : null,
+        small: true,
+        ink: colors.muted,
+      ),
+    ];
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -80,26 +102,11 @@ class Keypad extends StatelessWidget {
             ),
           ),
         _Row([runs(0), runs(1), runs(2), runs(3)]),
-        _Row([
-          runs(4),
-          runs(6),
-          _Key(
-            key: const Key('wicket'),
-            label: 'W',
-            semantics: 'Wicket',
-            onTap: onWicket,
-            fill: colors.wicket,
-            ink: colors.onSemantic,
-          ),
-          _Key(
-            key: const Key('undo'),
-            label: 'Undo',
-            semantics: 'Undo last action',
-            onTap: canUndo ? onUndo : null,
-            small: true,
-            ink: colors.muted,
-          ),
-        ]),
+        _Row(
+          leftHanded
+              ? [...actions.reversed, runs(4), runs(6)]
+              : [runs(4), runs(6), ...actions],
+        ),
         _Row([
           extra('Wd', ArmedExtra.wide, 'Wide'),
           extra('Nb', ArmedExtra.noBall, 'No-ball'),
@@ -119,7 +126,7 @@ class Keypad extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
               ),
             ),
-            child: const Text('More: 5 runs · swap strike'),
+            child: const Text('More: retire, penalty, change bowler…'),
           ),
         ),
       ],

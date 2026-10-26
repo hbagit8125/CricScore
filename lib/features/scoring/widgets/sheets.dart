@@ -2,6 +2,7 @@ import 'package:cricket_engine/cricket_engine.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../ball_edit.dart';
 import '../scoring_logic.dart';
 import 'score_panels.dart';
 
@@ -133,17 +134,61 @@ class _OpenersSheetState extends State<OpenersSheet> {
 
 /// Who bowls next: the suggested bowler first, ineligible bowlers greyed
 /// with the reason. One tap.
+///
+/// An ineligible bowler can still be chosen when the umpire allowed it,
+/// after a confirmation. With [canExtend], the scorer can instead record
+/// that the umpire gave one more ball in the over just finished.
 class BowlerSheet extends StatelessWidget {
   const BowlerSheet({
     super.key,
     required this.question,
     required this.innings,
     required this.nameOf,
+    this.canExtend = false,
   });
 
   final ChooseBowler question;
   final InningsState innings;
   final NameOf nameOf;
+  final bool canExtend;
+
+  static String reason(BowlerIneligibility r) => switch (r) {
+    BowlerIneligibility.bowledPreviousOver => 'Bowled the last over',
+    BowlerIneligibility.quotaReached => 'No overs left',
+    BowlerIneligibility.currentBowler => 'Bowling now',
+    BowlerIneligibility.bowledPreviousSuperOver => 'Bowled the last super over',
+  };
+
+  Future<void> _override(
+    BuildContext context,
+    String id,
+    BowlerIneligibility why,
+  ) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Let ${nameOf(id)} bowl?'),
+        content: Text(
+          'The records say: ${reason(why).toLowerCase()}. Record it anyway '
+          'because the umpire allowed it?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('umpireAllowed'),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Umpire allowed it'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && context.mounted) {
+      Navigator.pop(context, BowlerSelected(id, umpireAllowed: true));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -183,20 +228,30 @@ class BowlerSheet extends StatelessWidget {
                 ),
               for (final e in q.ineligible.entries)
                 ListTile(
-                  enabled: false,
-                  title: Text(nameOf(e.key)),
-                  subtitle: Text(switch (e.value) {
-                    BowlerIneligibility.bowledPreviousOver =>
-                      'Bowled the last over',
-                    BowlerIneligibility.quotaReached => 'No overs left',
-                    BowlerIneligibility.currentBowler => 'Bowling now',
-                    BowlerIneligibility.bowledPreviousSuperOver =>
-                      'Bowled the last super over',
-                  }),
+                  key: Key('bowler-${e.key}'),
+                  title: Text(
+                    nameOf(e.key),
+                    style: TextStyle(color: colors.muted),
+                  ),
+                  subtitle: Text(reason(e.value)),
+                  trailing: e.value == BowlerIneligibility.currentBowler
+                      ? null
+                      : Icon(Icons.gavel, size: 18, color: colors.muted),
+                  onTap: e.value == BowlerIneligibility.currentBowler
+                      ? null
+                      : () => _override(context, e.key, e.value),
                 ),
             ],
           ),
         ),
+        if (canExtend)
+          TextButton.icon(
+            key: const Key('overExtended'),
+            onPressed: () => Navigator.pop(context, const OverExtended()),
+            icon: const Icon(Icons.add),
+            label: const Text('Umpire allowed another ball in that over'),
+          ),
+        const SizedBox(height: 8),
       ],
     );
   }
@@ -464,36 +519,337 @@ class _Choice extends StatelessWidget {
   }
 }
 
-/// Less common actions for P3a. More arrive in P3b.
-enum MoreAction { fiveRuns, swapStrike }
+/// Less common actions, grouped as a scorer thinks of them.
+enum MoreAction {
+  fiveRuns,
+  swapStrike,
+  retire,
+  timedOut,
+  runOutBackingUp,
+  changeBowler,
+  overCalledEarly,
+  penalty,
+  revisedTarget,
+  renamePlayer,
+  endInnings,
+  abandon,
+}
 
 class MoreSheet extends StatelessWidget {
-  const MoreSheet({super.key, required this.canSwap});
+  const MoreSheet({super.key, required this.enabled});
 
-  final bool canSwap;
+  /// Actions that make sense right now; the rest are shown disabled.
+  final Set<MoreAction> enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget item(MoreAction a, IconData icon, String title, String subtitle) =>
+        ListTile(
+          key: Key('more-${a.name}'),
+          enabled: enabled.contains(a),
+          leading: Icon(icon),
+          title: Text(title),
+          subtitle: Text(subtitle),
+          onTap: () => Navigator.pop(context, a),
+        );
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const _SheetTitle('More'),
+        Flexible(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              const _Group('Batting'),
+              item(
+                MoreAction.fiveRuns,
+                Icons.exposure_plus_1,
+                '5 runs',
+                'Five run, or with any extra armed',
+              ),
+              item(
+                MoreAction.swapStrike,
+                Icons.swap_vert,
+                'Swap strike',
+                'Correct which batter is on strike',
+              ),
+              item(
+                MoreAction.retire,
+                Icons.healing,
+                'Retire a batter',
+                'Retired hurt (not out) or retired out',
+              ),
+              item(
+                MoreAction.timedOut,
+                Icons.timer_off_outlined,
+                'Timed out',
+                'The new batter was not ready in time',
+              ),
+              item(
+                MoreAction.runOutBackingUp,
+                Icons.directions_run,
+                'Non-striker run out backing up',
+                'Run out by the bowler before the ball',
+              ),
+              const _Group('Bowling and umpires'),
+              item(
+                MoreAction.changeBowler,
+                Icons.person_remove_outlined,
+                'Change bowler mid-over',
+                'The bowler cannot finish the over',
+              ),
+              item(
+                MoreAction.overCalledEarly,
+                Icons.gavel,
+                'Umpire called over early',
+                'The over stands as called',
+              ),
+              item(
+                MoreAction.penalty,
+                Icons.flag_outlined,
+                'Penalty runs',
+                'Five runs awarded to either side',
+              ),
+              const _Group('Match'),
+              item(
+                MoreAction.revisedTarget,
+                Icons.cloud_outlined,
+                'Reduce overs or revise target',
+                'After rain or a delay',
+              ),
+              item(
+                MoreAction.renamePlayer,
+                Icons.edit_outlined,
+                'Rename a player',
+                'Fix a spelling; the scoring is unchanged',
+              ),
+              item(
+                MoreAction.endInnings,
+                Icons.stop_circle_outlined,
+                'End innings',
+                'No one else is able to bat',
+              ),
+              item(
+                MoreAction.abandon,
+                Icons.block,
+                'Abandon match',
+                'No result',
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _Group extends StatelessWidget {
+  const _Group(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+    child: Text(
+      label.toUpperCase(),
+      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+        color: context.colors.muted,
+        letterSpacing: 1.2,
+      ),
+    ),
+  );
+}
+
+typedef Choice<T> = ({T value, String label, String? detail, Key? key});
+
+/// One choice from a short list, for example which batter retires.
+class ChoiceSheet<T> extends StatelessWidget {
+  const ChoiceSheet({
+    super.key,
+    required this.title,
+    required this.choices,
+    this.subtitle,
+  });
+
+  final String title;
+  final String? subtitle;
+  final List<Choice<T>> choices;
 
   @override
   Widget build(BuildContext context) => Column(
     mainAxisSize: MainAxisSize.min,
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      const _SheetTitle('More'),
-      ListTile(
-        key: const Key('more-5'),
-        leading: const Icon(Icons.exposure_plus_1),
-        title: const Text('5 runs'),
-        subtitle: const Text('Five run, or with any extra armed'),
-        onTap: () => Navigator.pop(context, MoreAction.fiveRuns),
-      ),
-      ListTile(
-        key: const Key('more-swap'),
-        enabled: canSwap,
-        leading: const Icon(Icons.swap_vert),
-        title: const Text('Swap strike'),
-        subtitle: const Text('Correct which batter is on strike'),
-        onTap: () => Navigator.pop(context, MoreAction.swapStrike),
+      _SheetTitle(title, subtitle: subtitle),
+      Flexible(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            for (final c in choices)
+              ListTile(
+                key: c.key,
+                title: Text(c.label),
+                subtitle: c.detail == null ? null : Text(c.detail!),
+                onTap: () => Navigator.pop(context, c.value),
+              ),
+          ],
+        ),
       ),
       const SizedBox(height: 12),
     ],
   );
+}
+
+/// Corrects a ball already recorded: change what happened, add a ball the
+/// scorer missed before it, or remove it.
+class EditBallSheet extends StatefulWidget {
+  const EditBallSheet({
+    super.key,
+    required this.ball,
+    required this.label,
+    required this.title,
+    required this.nameOf,
+  });
+
+  final DeliveryRecord ball;
+
+  /// The ball as shown in the over strip, e.g. `2wd`.
+  final String label;
+
+  /// "Over 4, ball 3".
+  final String title;
+  final NameOf nameOf;
+
+  @override
+  State<EditBallSheet> createState() => _EditBallSheetState();
+}
+
+class _EditBallSheetState extends State<EditBallSheet> {
+  var _insert = false;
+  late var _extra = _armedFor(widget.ball.delivery);
+  late var _keepWicket = widget.ball.delivery.dismissal != null;
+
+  static ArmedExtra _armedFor(Delivery d) => switch ((d.kind, d.runsTo)) {
+    (DeliveryKind.wide, _) => ArmedExtra.wide,
+    (DeliveryKind.noBall, RunsTo.byes) => ArmedExtra.noBallByes,
+    (DeliveryKind.noBall, RunsTo.legByes) => ArmedExtra.noBallLegByes,
+    (DeliveryKind.noBall, _) => ArmedExtra.noBall,
+    (_, RunsTo.byes) => ArmedExtra.byes,
+    (_, RunsTo.legByes) => ArmedExtra.legByes,
+    _ => ArmedExtra.none,
+  };
+
+  void _pick(int runs) {
+    final wicket = !_insert && _keepWicket
+        ? widget.ball.delivery.dismissal
+        : null;
+    final d = deliveryFor(_extra, runs, dismissal: wicket);
+    Navigator.pop(
+      context,
+      _insert ? BallEdit.insertBefore(d) : BallEdit.change(d),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final dismissal = widget.ball.delivery.dismissal;
+    const extras = [
+      (ArmedExtra.none, 'Off bat'),
+      (ArmedExtra.wide, 'Wd'),
+      (ArmedExtra.noBall, 'Nb'),
+      (ArmedExtra.byes, 'B'),
+      (ArmedExtra.legByes, 'LB'),
+    ];
+    final selected = switch (_extra) {
+      ArmedExtra.noBallByes || ArmedExtra.noBallLegByes => ArmedExtra.noBall,
+      final e => e,
+    };
+    return SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _SheetTitle(
+            widget.title,
+            subtitle:
+                'Recorded as ${widget.label} to '
+                '${widget.nameOf(widget.ball.strikerId)}',
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(value: false, label: Text('Change it')),
+                ButtonSegment(
+                  value: true,
+                  label: Text('Add a missed ball before'),
+                ),
+              ],
+              selected: {_insert},
+              onSelectionChanged: (v) => setState(() => _insert = v.single),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Wrap(
+              spacing: 8,
+              children: [
+                for (final (e, label) in extras)
+                  ChoiceChip(
+                    key: Key('edit-extra-${e.name}'),
+                    label: Text(label),
+                    selected: selected == e,
+                    onSelected: (_) => setState(() => _extra = e),
+                  ),
+              ],
+            ),
+          ),
+          if (!_insert && dismissal != null)
+            SwitchListTile(
+              key: const Key('keepWicket'),
+              title: Text('Keep the wicket (${dismissalName(dismissal.kind)})'),
+              value: _keepWicket,
+              onChanged: (v) => setState(() => _keepWicket = v),
+            ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                for (final r in [0, 1, 2, 3, 4, 5, 6]) ...[
+                  if (r > 0) const SizedBox(width: 6),
+                  Expanded(
+                    child: _Choice(
+                      key: Key('edit-runs$r'),
+                      label: '$r',
+                      onTap:
+                          (r == 6 && !_extra.allowsSix) ||
+                              (r == 0 && !_extra.allowsZero)
+                          ? null
+                          : () => _pick(r),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (!_insert)
+            TextButton.icon(
+              key: const Key('removeBall'),
+              onPressed: () => Navigator.pop(context, const BallEdit.remove()),
+              icon: Icon(Icons.delete_outline, color: colors.wicket),
+              label: Text(
+                'Remove this ball',
+                style: TextStyle(color: colors.wicket),
+              ),
+            ),
+          const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
 }

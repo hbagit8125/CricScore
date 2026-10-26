@@ -152,9 +152,13 @@ final class DeliveryRecord {
     required this.teamRuns,
     required this.totalRuns,
     required this.wasFreeHit,
+    required this.eventIndex,
   });
 
   final Delivery delivery;
+
+  /// Position of this delivery in the match's event log, for corrections.
+  final int eventIndex;
   final String bowlerId;
   final String strikerId;
 

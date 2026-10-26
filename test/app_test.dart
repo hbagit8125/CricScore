@@ -1,5 +1,6 @@
 import 'package:cric_score/app/app.dart';
 import 'package:cric_score/auth/auth_providers.dart';
+import 'package:cric_score/core/preferences.dart';
 import 'package:cric_score/core/theme/app_colors.dart';
 import 'package:cric_score/core/theme/app_theme.dart';
 import 'package:cric_score/data/local/app_database.dart';
@@ -9,9 +10,10 @@ import 'package:cric_score/sync/sync_providers.dart';
 import 'package:cricket_engine/cricket_engine.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
-import 'package:flutter/widgets.dart' show Key, SizedBox;
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import 'support/fake_auth.dart';
 import 'support/memory_cloud_store.dart';
@@ -116,6 +118,79 @@ void main() {
     expect(find.text('Lions v Tigers'), findsOneWidget);
     expect(find.text('Custom · Not started'), findsOneWidget);
     expect(find.text('No matches yet'), findsNothing);
+    await unmountApp(tester);
+  });
+
+  testWidgets('a match is deleted after confirming', (tester) async {
+    final repo = MatchRepository(db, ownerUid: FakeAuthService.testUser.uid);
+    late String id;
+    await tester.runAsync(() async {
+      id = await repo.create(
+        MatchSetup(
+          rules: MatchRules.custom(overs: 5, playersPerSide: 3),
+          teamA: TeamSheet(
+            id: 'L',
+            name: 'Lions',
+            players: [
+              for (var i = 1; i <= 3; i++)
+                PlayerRef(id: 'L$i', name: 'Lion $i'),
+            ],
+          ),
+          teamB: TeamSheet(
+            id: 'T',
+            name: 'Tigers',
+            players: [
+              for (var i = 1; i <= 3; i++)
+                PlayerRef(id: 'T$i', name: 'Tiger $i'),
+            ],
+          ),
+          toss: const Toss(wonByTeamId: 'L', decision: TossDecision.bat),
+        ),
+      );
+    });
+    await pumpApp(tester);
+    expect(find.text('Lions v Tigers'), findsOneWidget);
+
+    await tester.tap(find.byKey(Key('matchMenu-$id')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('deleteMatch')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirmDelete')));
+    await settle(tester);
+    expect(find.text('No matches yet'), findsOneWidget);
+    await unmountApp(tester);
+  });
+
+  testWidgets('the outdoor theme is chosen and remembered', (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.byTooltip('Account'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('display')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('themeOutdoor')));
+    await tester.tap(find.byKey(const Key('leftHanded')));
+    await settle(tester);
+    final theme = Theme.of(tester.element(find.text('CricScore')));
+    expect(
+      theme.extension<AppColors>()!.background,
+      AppColors.outdoor.background,
+    );
+    final saved = await tester.runAsync(() => db.setting('pref.theme'));
+    expect(saved, ThemeChoice.outdoor.name);
+    expect(await tester.runAsync(() => db.setting('pref.leftHanded')), 'true');
+    await unmountApp(tester);
+  });
+
+  testWidgets('the version and build are shown', (tester) async {
+    PackageInfo.setMockInitialValues(
+      appName: 'CricScore',
+      packageName: 'com.cricscore',
+      version: '0.3.0',
+      buildNumber: '57',
+      buildSignature: '',
+    );
+    await pumpApp(tester);
+    expect(find.text('Version 0.3.0 (build 57)'), findsOneWidget);
     await unmountApp(tester);
   });
 

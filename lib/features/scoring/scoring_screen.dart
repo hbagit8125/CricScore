@@ -3,10 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../app/router.dart';
+import '../../core/preferences.dart';
 import '../../core/theme/app_colors.dart';
 import '../../data/providers.dart';
+import 'ball_edit.dart';
 import 'scoring_logic.dart';
 import 'widgets/keypad.dart';
 import 'widgets/score_panels.dart';
@@ -32,10 +35,34 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
   int? _askedAt;
   bool _asking = false;
 
+  /// The batter who just came in automatically, shown with a Change button
+  /// until the next ball. Not a snackbar, which would cover the keypad.
+  ({int index, ChooseBatter question})? _cameIn;
+
   MatchController get _controller =>
       ref.read(matchControllerProvider(widget.matchId).notifier);
 
   Match? get _match => ref.read(matchControllerProvider(widget.matchId)).value;
+
+  @override
+  void initState() {
+    super.initState();
+    _keepAwake(true);
+  }
+
+  @override
+  void dispose() {
+    _keepAwake(false);
+    super.dispose();
+  }
+
+  /// The screen stays on while scoring. Not available everywhere (tests,
+  /// some browsers), which is fine.
+  static void _keepAwake(bool on) {
+    try {
+      WakelockPlus.toggle(enable: on).catchError((Object _) {});
+    } on Object catch (_) {}
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -77,6 +104,14 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            key: const Key('scorecard'),
+            tooltip: 'Scorecard',
+            icon: const Icon(Icons.table_chart_outlined),
+            onPressed: () => context.push(Routes.scorecard(widget.matchId)),
+          ),
+        ],
       ),
       body: SafeArea(
         child: Padding(
@@ -91,12 +126,23 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
                     children: [
                       ScoreHeader(innings: inn, setup: setup),
                       const SizedBox(height: 14),
+                      if (_cameIn case final c?) ...[
+                        _CameInBanner(
+                          name: nameOf(c.question.suggested),
+                          onChange: () => _changeBatter(c.index, c.question),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
                       if (inn.batters.isNotEmpty) ...[
                         BattersPanel(innings: inn, nameOf: nameOf),
                         const SizedBox(height: 8),
                         BowlerPanel(innings: inn, nameOf: nameOf),
                         const SizedBox(height: 14),
-                        OverStrip(innings: inn, rules: setup.rules),
+                        OverStrip(
+                          innings: inn,
+                          rules: setup.rules,
+                          onBallTap: (d) => _editBall(match, d),
+                        ),
                       ],
                     ],
                   ),
@@ -128,6 +174,11 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
           ),
           const SizedBox(height: 12),
           FilledButton(
+            key: const Key('resultScorecard'),
+            onPressed: () => context.push(Routes.scorecard(widget.matchId)),
+            child: const Text('Scorecard'),
+          ),
+          TextButton(
             onPressed: () => context.go(Routes.home),
             child: const Text('Back to matches'),
           ),
@@ -189,6 +240,7 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
       );
     }
     return Keypad(
+      leftHanded: ref.watch(preferencesProvider).value?.leftHanded ?? false,
       armed: _armed,
       canUndo: match.canUndo,
       onRuns: _runs,
@@ -204,6 +256,9 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
   Future<bool> _apply(MatchEvent event) async {
     try {
       await _controller.apply(event);
+      if (event is Delivery && _cameIn != null && mounted) {
+        setState(() => _cameIn = null);
+      }
       return true;
     } on IllegalEventException catch (e) {
       _toast(e.message);
@@ -242,24 +297,352 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
   }
 
   Future<void> _undo() async {
-    setState(() => _armed = ArmedExtra.none);
+    setState(() {
+      _armed = ArmedExtra.none;
+      _cameIn = null;
+    });
     _askedAt = null;
     await _controller.undoLastAction();
   }
 
   Future<void> _more(Match match) async {
     final inn = match.state.currentInnings!;
+    final bothIn = inn.strikerId != null && inn.nonStrikerId != null;
+    final midOver = inn.currentOver?.deliveries.isNotEmpty ?? false;
+    final legalThisOver =
+        inn.currentOver?.deliveries.where((d) => d.delivery.isLegal).length ??
+        0;
     final action = await showScoringSheet<MoreAction>(
       context,
-      MoreSheet(canSwap: inn.strikerId != null && inn.nonStrikerId != null),
+      MoreSheet(
+        enabled: {
+          MoreAction.fiveRuns,
+          if (bothIn) MoreAction.swapStrike,
+          if (inn.strikerId != null || inn.nonStrikerId != null)
+            MoreAction.retire,
+          if (_timedOutCandidate(match) != null) MoreAction.timedOut,
+          if (bothIn && inn.bowlerId != null) MoreAction.runOutBackingUp,
+          if (midOver && inn.bowlerId != null) MoreAction.changeBowler,
+          if (legalThisOver > 0) MoreAction.overCalledEarly,
+          MoreAction.penalty,
+          if (match.setup.rules.ballsPerInnings != null)
+            MoreAction.revisedTarget,
+          MoreAction.renamePlayer,
+          if (!inn.isClosed) MoreAction.endInnings,
+          MoreAction.abandon,
+        },
+      ),
     );
+    if (action == null || !mounted) return;
+    final setup = match.setup;
+    final nameOf = nameLookup(setup);
     switch (action) {
       case MoreAction.fiveRuns:
         await _runs(5);
       case MoreAction.swapStrike:
         await _apply(const SwapStrike());
-      case null:
-        break;
+      case MoreAction.retire:
+        final event = await showScoringSheet<MatchEvent>(
+          context,
+          ChoiceSheet<MatchEvent>(
+            title: 'Who is retiring?',
+            subtitle: 'Retired hurt can come back later; retired out cannot',
+            choices: [
+              for (final id in [?inn.strikerId, ?inn.nonStrikerId]) ...[
+                (
+                  value: Retired(id, out: false),
+                  label: '${nameOf(id)}: retired hurt',
+                  detail: 'Not out; may bat again',
+                  key: Key('retire-$id-hurt'),
+                ),
+                (
+                  value: Retired(id, out: true),
+                  label: '${nameOf(id)}: retired out',
+                  detail: 'Counts as a wicket',
+                  key: Key('retire-$id-out'),
+                ),
+              ],
+            ],
+          ),
+        );
+        if (event != null) await _apply(event);
+      case MoreAction.timedOut:
+        final index = _timedOutCandidate(match)!;
+        final id = (match.events[index] as BatterIn).batterId;
+        if (await _confirm(
+          'Timed out?',
+          '${nameOf(id)} was not ready in time and is out. The next batter '
+              'comes in.',
+          'Timed out',
+        )) {
+          await _replace(index, TimedOut(id));
+        }
+      case MoreAction.runOutBackingUp:
+        final id = inn.nonStrikerId!;
+        if (await _confirm(
+          'Run out backing up?',
+          '${nameOf(id)} left the crease before ${nameOf(inn.bowlerId!)} '
+              'bowled and is run out. No ball is counted.',
+          'Run out',
+        )) {
+          await _apply(RunOutBeforeDelivery(id));
+        }
+      case MoreAction.changeBowler:
+        final event = await showScoringSheet<MatchEvent>(
+          context,
+          BowlerSheet(
+            question: match.bowlerOptions(midOver: true),
+            innings: inn,
+            nameOf: nameOf,
+          ),
+        );
+        if (event != null) await _apply(event);
+      case MoreAction.overCalledEarly:
+        final balls = legalThisOver == 1 ? '1 ball' : '$legalThisOver balls';
+        if (await _confirm(
+          'End the over now?',
+          'The umpire called over after $balls. The over stands as called.',
+          'End over',
+        )) {
+          await _apply(const OverCalledEarly());
+        }
+      case MoreAction.penalty:
+        final event = await showScoringSheet<MatchEvent>(
+          context,
+          ChoiceSheet<MatchEvent>(
+            title: 'Five penalty runs to',
+            choices: [
+              for (final team in [
+                setup.team(inn.battingTeamId),
+                setup.team(inn.bowlingTeamId),
+              ])
+                (
+                  value: PenaltyRuns(teamId: team.id),
+                  label: team.name,
+                  detail: team.id == inn.battingTeamId
+                      ? 'Batting side'
+                      : 'Fielding side',
+                  key: Key('penalty-${team.id}'),
+                ),
+            ],
+          ),
+        );
+        if (event != null) await _apply(event);
+      case MoreAction.revisedTarget:
+        final event = await _revise(match);
+        if (event != null) await _apply(event);
+      case MoreAction.renamePlayer:
+        await _rename(match);
+      case MoreAction.endInnings:
+        if (await _confirm(
+          'End the innings?',
+          'Use this when no one else is able to bat.',
+          'End innings',
+        )) {
+          await _apply(const EndInnings());
+        }
+      case MoreAction.abandon:
+        if (await _confirm(
+          'Abandon the match?',
+          'It will be recorded as no result. You can undo this.',
+          'Abandon',
+        )) {
+          await _apply(const Abandoned());
+        }
+    }
+  }
+
+  /// The batter who has just come in and not yet faced, who may be timed
+  /// out instead: the index of their [BatterIn] event.
+  int? _timedOutCandidate(Match match) {
+    final events = match.events;
+    for (var i = events.length - 1; i >= 0; i--) {
+      final e = events[i];
+      if (e is BatterIn) return i;
+      if (e is! BowlerSelected) return null;
+    }
+    return null;
+  }
+
+  Future<void> _replace(int index, MatchEvent event) async {
+    try {
+      await _controller.replaceAt(index, event);
+    } on IllegalEventException catch (e) {
+      _toast(e.message);
+    }
+  }
+
+  Future<bool> _confirm(String title, String message, String action) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('confirm'),
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(action),
+          ),
+        ],
+      ),
+    );
+    return ok == true && mounted;
+  }
+
+  /// Fewer overs, a new target, or both, as the officials set them.
+  Future<RevisedTarget?> _revise(Match match) {
+    final inn = match.state.currentInnings!;
+    final rules = match.setup.rules;
+    final chasing = inn.target != null || match.state.innings.length > 1;
+    final limit = inn.ballLimit;
+    final overs = TextEditingController(
+      text: limit == null ? '' : oversText(limit, rules.ballsPerOver),
+    );
+    final target = TextEditingController();
+    return showDialog<RevisedTarget>(
+      context: context,
+      builder: (context) {
+        String? error;
+        return StatefulBuilder(
+          builder: (context, setState) => AlertDialog(
+            title: const Text('Reduce overs or revise target'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  key: const Key('revisedOvers'),
+                  controller: overs,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Overs in this innings',
+                  ),
+                ),
+                if (chasing)
+                  TextField(
+                    key: const Key('revisedTarget'),
+                    controller: target,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Target (runs to win)',
+                      helperText: 'From the officials, e.g. by DLS',
+                    ),
+                  ),
+                if (error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      error!,
+                      style: TextStyle(color: context.colors.wicket),
+                    ),
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                key: const Key('saveRevision'),
+                onPressed: () {
+                  final balls = parseOvers(overs.text, rules.ballsPerOver);
+                  final runs = int.tryParse(target.text.trim());
+                  final newBalls = balls == limit ? null : balls;
+                  if (newBalls == null && runs == null) {
+                    setState(() => error = 'Enter the new overs or target.');
+                    return;
+                  }
+                  Navigator.pop(
+                    context,
+                    RevisedTarget(ballsPerInnings: newBalls, target: runs),
+                  );
+                },
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _rename(Match match) async {
+    final setup = match.setup;
+    final id = await showScoringSheet<String>(
+      context,
+      ChoiceSheet<String>(
+        title: 'Rename a player',
+        choices: [
+          for (final team in [setup.teamA, setup.teamB])
+            for (final p in team.squad)
+              (
+                value: p.id,
+                label: p.name,
+                detail: team.name,
+                key: Key('rename-${p.id}'),
+              ),
+        ],
+      ),
+    );
+    if (id == null || !mounted) return;
+    final controller = TextEditingController(text: nameLookup(setup)(id));
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rename'),
+        content: TextField(
+          key: const Key('newName'),
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          onSubmitted: (v) => Navigator.pop(context, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('saveName'),
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (name == null || name.trim().isEmpty) return;
+    try {
+      await _controller.renamePlayer(id, name);
+    } on IllegalEventException catch (e) {
+      _toast(e.message);
+    }
+  }
+
+  /// Opens a recorded ball for correction and replays the match with it.
+  Future<void> _editBall(Match match, DeliveryRecord ball) async {
+    final edit = await showScoringSheet<BallEdit>(
+      context,
+      EditBallSheet(
+        ball: ball,
+        label: ballLabel(ball.delivery, match.setup.rules),
+        title: ballPosition(match, ball),
+        nameOf: nameLookup(match.setup),
+      ),
+    );
+    if (edit == null || !mounted) return;
+    final fixed = correctedLog(match, ball, edit);
+    try {
+      await _controller.replaceEvents(fixed.events);
+      _toast(fixed.note ?? 'Ball corrected');
+    } on IllegalEventException catch (e) {
+      _toast('That change does not fit what happened later: ${e.message}');
     }
   }
 
@@ -290,22 +673,11 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_match case final m?) _react(m);
     });
-    final index = _match!.events.length - 1;
-    final nameOf = nameLookup(match.setup);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text('${nameOf(q.suggested)} comes in'),
-          action: SnackBarAction(
-            label: 'Change',
-            onPressed: () => _changeBatter(index, q, nameOf),
-          ),
-        ),
-      );
+    setState(() => _cameIn = (index: _match!.events.length - 1, question: q));
   }
 
-  Future<void> _changeBatter(int index, ChooseBatter q, NameOf nameOf) async {
+  Future<void> _changeBatter(int index, ChooseBatter q) async {
+    final nameOf = nameLookup(_match!.setup);
     final chosen = await showScoringSheet<String>(
       context,
       BatterSheet(
@@ -317,6 +689,19 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
     if (chosen == null || chosen == q.suggested) return;
     try {
       await _controller.replaceAt(index, BatterIn(chosen));
+      if (mounted) {
+        setState(
+          () => _cameIn = (
+            index: index,
+            question: ChooseBatter(
+              battingTeamId: q.battingTeamId,
+              candidates: q.candidates,
+              suggested: chosen,
+              atStrikersEnd: q.atStrikersEnd,
+            ),
+          ),
+        );
+      }
     } on IllegalEventException catch (e) {
       _toast(e.message);
     }
@@ -344,7 +729,18 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
       ),
       final ChooseBowler q => showScoringSheet<MatchEvent>(
         context,
-        BowlerSheet(question: q, innings: inn, nameOf: nameOf),
+        BowlerSheet(
+          question: q,
+          innings: inn,
+          nameOf: nameOf,
+          // Straight after an over, the umpire may have allowed one more.
+          canExtend:
+              !q.midOver &&
+              inn.overs.isNotEmpty &&
+              inn.overs.last.isComplete &&
+              match.events.isNotEmpty &&
+              match.events.last is! OverCalledEarly,
+        ),
       ),
       final ChooseFollowOn q => _followOn(q, setup),
       ChooseBatter() => Future.value(),
@@ -400,5 +796,33 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+}
+
+class _CameInBanner extends StatelessWidget {
+  const _CameInBanner({required this.name, required this.onChange});
+
+  final String name;
+  final VoidCallback onChange;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      key: const Key('cameIn'),
+      padding: const EdgeInsets.only(left: 14),
+      decoration: BoxDecoration(
+        color: colors.runs.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.login, size: 18, color: colors.runs),
+          const SizedBox(width: 8),
+          Expanded(child: Text('$name comes in')),
+          TextButton(onPressed: onChange, child: const Text('Change')),
+        ],
+      ),
+    );
   }
 }

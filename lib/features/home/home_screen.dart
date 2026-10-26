@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../app/router.dart';
 import '../../auth/auth_providers.dart';
+import '../../core/preferences.dart';
 import '../../core/theme/app_colors.dart';
 import '../../data/local/app_database.dart';
 import '../../data/match_repository.dart';
@@ -50,6 +52,7 @@ class HomeScreen extends ConsumerWidget {
                 onPressed: () => context.push(Routes.newMatch),
                 child: const Text('New match'),
               ),
+              const _Version(),
             ],
           ),
         ),
@@ -125,26 +128,73 @@ class _SectionLabel extends StatelessWidget {
   );
 }
 
-class _MatchTile extends StatelessWidget {
+class _MatchTile extends ConsumerWidget {
   const _MatchTile({required this.match, required this.live});
 
   final MatchSummary match;
   final bool live;
 
+  Future<void> _delete(BuildContext context, WidgetRef ref) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete this match?'),
+        content: Text(
+          '${match.title} will be deleted from this device and your '
+          'account. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('confirmDelete'),
+            style: FilledButton.styleFrom(
+              backgroundColor: context.colors.wicket,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) await ref.read(matchRepositoryProvider).delete(match.id);
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     return Card(
       color: colors.surface,
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
         key: Key('match-${match.id}'),
-        onTap: () => context.push(Routes.match(match.id)),
+        onTap: () => context.push(
+          live ? Routes.match(match.id) : Routes.scorecard(match.id),
+        ),
+        onLongPress: () => _delete(context, ref),
         title: Text(match.title),
         subtitle: Text('${match.format} · ${match.summary}'),
-        trailing: live
-            ? Icon(Icons.circle, size: 10, color: colors.runs)
-            : null,
+        trailing: PopupMenuButton<void>(
+          key: Key('matchMenu-${match.id}'),
+          tooltip: 'Match options',
+          icon: Icon(Icons.more_vert, color: colors.muted),
+          itemBuilder: (context) => [
+            if (!live)
+              PopupMenuItem<void>(
+                onTap: () => context.push(Routes.match(match.id)),
+                child: const Text('Open scoring'),
+              ),
+            PopupMenuItem<void>(
+              key: const Key('deleteMatch'),
+              onTap: () => _delete(context, ref),
+              child: const Text('Delete'),
+            ),
+          ],
+        ),
+        leading: live ? Icon(Icons.circle, size: 10, color: colors.runs) : null,
+        minLeadingWidth: 10,
       ),
     );
   }
@@ -185,10 +235,93 @@ class _AccountMenu extends ConsumerWidget {
       itemBuilder: (context) => [
         PopupMenuItem<void>(enabled: false, child: Text(user?.label ?? '')),
         PopupMenuItem<void>(
+          key: const Key('display'),
+          onTap: () => showModalBottomSheet<void>(
+            context: context,
+            showDragHandle: true,
+            builder: (context) => const _DisplaySheet(),
+          ),
+          child: const Text('Display'),
+        ),
+        PopupMenuItem<void>(
           onTap: () => ref.read(authServiceProvider).signOut(),
           child: const Text('Sign out'),
         ),
       ],
+    );
+  }
+}
+
+/// Theme and keypad hand, kept on this device.
+class _DisplaySheet extends ConsumerWidget {
+  const _DisplaySheet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final prefs = ref.watch(preferencesProvider).value ?? const Preferences();
+    final controller = ref.read(preferencesProvider.notifier);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Display', style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: 12),
+            SegmentedButton<ThemeChoice>(
+              segments: const [
+                ButtonSegment(value: ThemeChoice.system, label: Text('Auto')),
+                ButtonSegment(value: ThemeChoice.dark, label: Text('Dark')),
+                ButtonSegment(value: ThemeChoice.light, label: Text('Light')),
+                ButtonSegment(
+                  value: ThemeChoice.outdoor,
+                  label: Text('Outdoor', key: Key('themeOutdoor')),
+                ),
+              ],
+              selected: {prefs.theme},
+              onSelectionChanged: (v) => controller.setTheme(v.single),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Outdoor is high contrast for bright sunshine.',
+              style: TextStyle(color: context.colors.muted, fontSize: 13),
+            ),
+            SwitchListTile(
+              key: const Key('leftHanded'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Left-handed keypad'),
+              subtitle: const Text('Wicket and undo on the left'),
+              value: prefs.leftHanded,
+              onChanged: controller.setLeftHanded,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+final _packageInfoProvider = FutureProvider<PackageInfo>(
+  (ref) => PackageInfo.fromPlatform(),
+);
+
+/// "Version 0.3.0 (build 57)", so testers can tell builds apart.
+class _Version extends ConsumerWidget {
+  const _Version();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final info = ref.watch(_packageInfoProvider).value;
+    if (info == null) return const SizedBox(height: 8);
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Text(
+        'Version ${info.version} (build ${info.buildNumber})',
+        key: const Key('version'),
+        textAlign: TextAlign.center,
+        style: TextStyle(color: context.colors.muted, fontSize: 12),
+      ),
     );
   }
 }

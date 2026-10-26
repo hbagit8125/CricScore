@@ -16,6 +16,8 @@ abstract final class AppTheme {
 
   static ThemeData dark() => _build(AppColors.dark, Brightness.dark);
 
+  static ThemeData outdoor() => _build(AppColors.outdoor, Brightness.light);
+
   static ThemeData _build(AppColors c, Brightness brightness) {
     final scheme = ColorScheme(
       brightness: brightness,

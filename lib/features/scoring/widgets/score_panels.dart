@@ -229,11 +229,18 @@ class BowlerPanel extends StatelessWidget {
 }
 
 /// The balls of the over in progress, or of the last over between overs.
+/// Tapping a ball opens it for correction.
 class OverStrip extends StatelessWidget {
-  const OverStrip({super.key, required this.innings, required this.rules});
+  const OverStrip({
+    super.key,
+    required this.innings,
+    required this.rules,
+    this.onBallTap,
+  });
 
   final InningsState innings;
   final MatchRules rules;
+  final ValueChanged<DeliveryRecord>? onBallTap;
 
   @override
   Widget build(BuildContext context) {
@@ -263,8 +270,14 @@ class OverStrip extends StatelessWidget {
             spacing: 6,
             runSpacing: 6,
             children: [
-              for (final d in balls) _BallChip(record: d, rules: rules),
-              for (var i = 0; i < empty; i++) const _BallChip(),
+              for (final d in balls)
+                BallChip(
+                  key: Key('ball-${d.eventIndex}'),
+                  record: d,
+                  rules: rules,
+                  onTap: onBallTap == null ? null : () => onBallTap!(d),
+                ),
+              for (var i = 0; i < empty; i++) const BallChip(),
             ],
           ),
         ),
@@ -273,11 +286,14 @@ class OverStrip extends StatelessWidget {
   }
 }
 
-class _BallChip extends StatelessWidget {
-  const _BallChip({this.record, this.rules});
+/// One ball as a coloured chip: wickets red, boundaries green, extras
+/// amber. Without a record, an empty slot still to be bowled.
+class BallChip extends StatelessWidget {
+  const BallChip({super.key, this.record, this.rules, this.onTap});
 
   final DeliveryRecord? record;
   final MatchRules? rules;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -306,7 +322,7 @@ class _BallChip extends StatelessWidget {
         : extra
         ? colors.extras
         : colors.foreground;
-    return Container(
+    final chip = Container(
       constraints: const BoxConstraints(minWidth: 30),
       height: 30,
       padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -326,6 +342,12 @@ class _BallChip extends StatelessWidget {
           ),
         ),
       ),
+    );
+    if (onTap == null) return chip;
+    return Semantics(
+      button: true,
+      label: 'Correct this ball',
+      child: GestureDetector(onTap: onTap, child: chip),
     );
   }
 }

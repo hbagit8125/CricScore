@@ -36,6 +36,15 @@ void main() {
     expect(m.state.pending, isEmpty);
   });
 
+  test('every ball knows its place in the log, so it can be corrected', () {
+    m = m.bowl(6).over('B10').apply(const Delivery.four());
+    final ball = m.inn.overs[1].deliveries.single;
+    expect(m.events[ball.eventIndex], const Delivery.four());
+    m = m.replaceAt(ball.eventIndex, const Delivery.six());
+    expect(m.inn.runs, 6);
+    expect(m.inn.overs.first.deliveries.last.eventIndex, ball.eventIndex - 2);
+  });
+
   test('undo on an empty match does nothing', () {
     final fresh = Match.start(setupFor(MatchRules.t20));
     expect(fresh.canUndo, isFalse);

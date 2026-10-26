@@ -135,3 +135,34 @@ String? chaseLine(InningsState inn) {
   if (left == null) return 'Need $need to win';
   return 'Need $need off $left ${left == 1 ? 'ball' : 'balls'}';
 }
+
+/// Overs for a ball count as typed: "20", or "7.3" for a part over.
+String oversText(int balls, int ballsPerOver) {
+  final part = balls % ballsPerOver;
+  final whole = balls ~/ ballsPerOver;
+  return part == 0 ? '$whole' : '$whole.$part';
+}
+
+/// Legal balls for overs typed as "20" or "7.3"; null when not valid.
+int? parseOvers(String text, int ballsPerOver) {
+  final match = RegExp(r'^\s*(\d+)(?:\.(\d))?\s*$').firstMatch(text);
+  if (match == null) return null;
+  final whole = int.parse(match[1]!);
+  final part = int.parse(match[2] ?? '0');
+  if (part >= ballsPerOver) return null;
+  final balls = whole * ballsPerOver + part;
+  return balls == 0 ? null : balls;
+}
+
+/// "Over 4, delivery 3" for a recorded ball.
+String ballPosition(Match match, DeliveryRecord ball) {
+  for (final inn in match.state.innings) {
+    for (final over in inn.overs) {
+      final i = over.deliveries.indexWhere(
+        (d) => d.eventIndex == ball.eventIndex,
+      );
+      if (i >= 0) return 'Over ${over.number}, delivery ${i + 1}';
+    }
+  }
+  return 'Ball';
+}
