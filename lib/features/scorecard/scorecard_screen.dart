@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/ui/glass.dart';
 import '../../data/providers.dart';
 import '../scoring/scoring_logic.dart';
 import '../scoring/widgets/score_panels.dart';
@@ -19,7 +20,7 @@ class ScorecardScreen extends ConsumerWidget {
     final async = ref.watch(matchControllerProvider(matchId));
     final match = async.value;
     if (match == null) {
-      return Scaffold(
+      return GlassScaffold(
         appBar: AppBar(),
         body: async.hasError
             ? const Center(child: Text('This match could not be opened.'))
@@ -34,10 +35,12 @@ class ScorecardScreen extends ConsumerWidget {
     final result = match.state.result;
     return DefaultTabController(
       length: innings.length + 1,
-      child: Scaffold(
+      child: GlassScaffold(
         appBar: AppBar(
           title: Text('${setup.teamA.name} v ${setup.teamB.name}'),
           bottom: TabBar(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            labelPadding: const EdgeInsets.symmetric(horizontal: 16),
             isScrollable: true,
             tabAlignment: TabAlignment.start,
             tabs: [
@@ -112,153 +115,174 @@ class _InningsCard extends StatelessWidget {
     ];
     final e = inn.extras;
     final muted = TextStyle(color: colors.muted);
+    Widget panel(List<Widget> children, {Color? tint}) => GlassPanel(
+      tint: tint,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
+      ),
+    );
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
       children: [
-        Text(
-          '${inn.runs}/${inn.wickets}  (${oversLabel(inn)})',
-          style: text.headlineMedium,
-        ),
-        Text(
-          [
-            'Run rate ${inn.runRate.toStringAsFixed(2)}',
-            if (inn.target != null) 'Target ${inn.target}',
-          ].join(' · '),
-          style: muted,
-        ),
-        const SizedBox(height: 16),
-        _Table(
-          header: const ['Batter', 'R', 'B', '4s', '6s', 'SR'],
-          rows: [
-            for (final b in inn.batters)
-              _Row(
-                key: Key('bat-${b.playerId}'),
-                title: nameOf(b.playerId),
-                subtitle: howOut(b, nameOf),
-                bold: b.status == BatterStatus.batting,
-                cells: [
-                  '${b.runs}',
-                  '${b.balls}',
-                  '${b.fours}',
-                  '${b.sixes}',
-                  b.strikeRate.toStringAsFixed(1),
-                ],
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        _Line(
-          'Extras',
-          '${e.total}',
-          detail:
-              'wd ${e.wides}, nb ${e.noBalls}, b ${e.byes}, '
-              'lb ${e.legByes}${e.penalty > 0 ? ', pen ${e.penalty}' : ''}',
-        ),
-        _Line(
-          'Total',
-          '${inn.runs}/${inn.wickets}',
-          detail: oversLabel(inn),
-          bold: true,
-        ),
-        if (yetToBat.isNotEmpty) ...[
-          const SizedBox(height: 8),
+        panel(tint: colors.runs, [
           Text(
-            '${inn.isClosed ? 'Did not bat' : 'Yet to bat'}: '
-            '${yetToBat.map(nameOf).join(', ')}',
-            style: muted,
+            '${inn.runs}/${inn.wickets}  (${oversLabel(inn)})',
+            style: text.headlineMedium,
           ),
-        ],
-        if (inn.fallOfWickets.isNotEmpty) ...[
-          const _Heading('Fall of wickets'),
           Text(
             [
-              for (final f in inn.fallOfWickets)
-                '${f.wicket}-${f.runs} (${nameOf(f.batterId)}, '
-                    '${formatOvers(f.legalBalls, inn.ballsPerOver)})',
+              'Run rate ${inn.runRate.toStringAsFixed(2)}',
+              if (inn.target != null) 'Target ${inn.target}',
             ].join(' · '),
+            style: muted,
           ),
-        ],
-        if (inn.bowlers.isNotEmpty) ...[
-          const _Heading('Bowling'),
+        ]),
+        const _Heading('Batting'),
+        panel([
           _Table(
-            header: const ['Bowler', 'O', 'M', 'R', 'W', 'Econ'],
+            header: const ['Batter', 'R', 'B', '4s', '6s', 'SR'],
             rows: [
-              for (final b in inn.bowlers)
+              for (final b in inn.batters)
                 _Row(
-                  key: Key('bowl-${b.playerId}'),
+                  key: Key('bat-${b.playerId}'),
                   title: nameOf(b.playerId),
-                  subtitle: [
-                    if (b.wides > 0) '${b.wides} wd',
-                    if (b.noBalls > 0) '${b.noBalls} nb',
-                    '${b.dots} dots',
-                  ].join(', '),
+                  subtitle: howOut(b, nameOf),
+                  bold: b.status == BatterStatus.batting,
                   cells: [
-                    formatOvers(b.legalBalls, inn.ballsPerOver),
-                    '${b.maidens}',
                     '${b.runs}',
-                    '${b.wickets}',
-                    b.economy(inn.ballsPerOver).toStringAsFixed(2),
+                    '${b.balls}',
+                    '${b.fours}',
+                    '${b.sixes}',
+                    b.strikeRate.toStringAsFixed(1),
                   ],
                 ),
             ],
           ),
+          Divider(color: colors.line, height: 16),
+          _Line(
+            'Extras',
+            '${e.total}',
+            detail:
+                'wd ${e.wides}, nb ${e.noBalls}, b ${e.byes}, '
+                'lb ${e.legByes}${e.penalty > 0 ? ', pen ${e.penalty}' : ''}',
+          ),
+          _Line(
+            'Total',
+            '${inn.runs}/${inn.wickets}',
+            detail: oversLabel(inn),
+            bold: true,
+          ),
+          if (yetToBat.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              '${inn.isClosed ? 'Did not bat' : 'Yet to bat'}: '
+              '${yetToBat.map(nameOf).join(', ')}',
+              style: muted,
+            ),
+          ],
+        ]),
+        if (inn.fallOfWickets.isNotEmpty) ...[
+          const _Heading('Fall of wickets'),
+          panel([
+            Text(
+              [
+                for (final f in inn.fallOfWickets)
+                  '${f.wicket}-${f.runs} (${nameOf(f.batterId)}, '
+                      '${formatOvers(f.legalBalls, inn.ballsPerOver)})',
+              ].join(' · '),
+            ),
+          ]),
+        ],
+        if (inn.bowlers.isNotEmpty) ...[
+          const _Heading('Bowling'),
+          panel([
+            _Table(
+              header: const ['Bowler', 'O', 'M', 'R', 'W', 'Econ'],
+              rows: [
+                for (final b in inn.bowlers)
+                  _Row(
+                    key: Key('bowl-${b.playerId}'),
+                    title: nameOf(b.playerId),
+                    subtitle: [
+                      if (b.wides > 0) '${b.wides} wd',
+                      if (b.noBalls > 0) '${b.noBalls} nb',
+                      '${b.dots} dots',
+                    ].join(', '),
+                    cells: [
+                      formatOvers(b.legalBalls, inn.ballsPerOver),
+                      '${b.maidens}',
+                      '${b.runs}',
+                      '${b.wickets}',
+                      b.economy(inn.ballsPerOver).toStringAsFixed(2),
+                    ],
+                  ),
+              ],
+            ),
+          ]),
         ],
         if (inn.partnerships.isNotEmpty) ...[
           const _Heading('Partnerships'),
-          for (final p in inn.partnerships)
-            _Line(
-              p.batterIds.map(nameOf).join(' & '),
-              '${p.runs} (${p.balls})',
-            ),
+          panel([
+            for (final p in inn.partnerships)
+              _Line(
+                p.batterIds.map(nameOf).join(' & '),
+                '${p.runs} (${p.balls})',
+              ),
+          ]),
         ],
         if (inn.overs.isNotEmpty) ...[
           const _Heading('Overs'),
-          for (final over in inn.overs.reversed)
-            if (over.deliveries.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      width: 92,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Over ${over.number}',
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          Text(
-                            '${over.runs} runs',
-                            style: muted.copyWith(fontSize: 12),
-                          ),
-                        ],
+          panel([
+            for (final over in inn.overs.reversed)
+              if (over.deliveries.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: 84,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Over ${over.number}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              '${over.runs} runs',
+                              style: muted.copyWith(fontSize: 12),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            over.bowlerIds.map(nameOf).join(', '),
-                            style: muted.copyWith(fontSize: 12),
-                          ),
-                          const SizedBox(height: 4),
-                          Wrap(
-                            spacing: 4,
-                            runSpacing: 4,
-                            children: [
-                              for (final d in over.deliveries)
-                                BallChip(record: d, rules: setup.rules),
-                            ],
-                          ),
-                        ],
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              over.bowlerIds.map(nameOf).join(', '),
+                              style: muted.copyWith(fontSize: 12),
+                            ),
+                            const SizedBox(height: 4),
+                            Wrap(
+                              spacing: 4,
+                              runSpacing: 4,
+                              children: [
+                                for (final d in over.deliveries)
+                                  BallChip(record: d, rules: setup.rules),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
+          ]),
         ],
       ],
     );
@@ -272,7 +296,7 @@ class _Heading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(top: 24, bottom: 8),
+    padding: const EdgeInsets.only(top: 22, bottom: 8, left: 4),
     child: Text(
       label.toUpperCase(),
       style: Theme.of(context).textTheme.labelMedium?.copyWith(
@@ -298,7 +322,15 @@ class _Line extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          Text(label, style: TextStyle(fontWeight: weight)),
+          Flexible(
+            flex: detail == null ? 1 : 0,
+            fit: FlexFit.tight,
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontWeight: weight),
+            ),
+          ),
           if (detail != null) ...[
             const SizedBox(width: 8),
             Expanded(
@@ -308,8 +340,8 @@ class _Line extends StatelessWidget {
                 style: TextStyle(color: context.colors.muted, fontSize: 13),
               ),
             ),
-          ] else
-            const Spacer(),
+          ],
+          const SizedBox(width: 8),
           Text(
             value,
             style: TextStyle(

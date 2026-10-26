@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../auth/auth_providers.dart';
+import '../core/ui/glass.dart';
 import '../features/auth/sign_in_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/match_setup/new_match_screen.dart';
@@ -46,7 +47,8 @@ final routerProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(
         path: Routes.starting,
-        builder: (context, state) => const Scaffold(body: SizedBox.shrink()),
+        builder: (context, state) =>
+            const GlassScaffold(body: SizedBox.shrink()),
       ),
       GoRoute(
         path: Routes.signIn,

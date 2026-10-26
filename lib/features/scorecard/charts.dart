@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/ui/glass.dart';
 import 'scorecard_screen.dart';
 
 /// Series colours, checked for colour-blind separation and contrast against
@@ -220,25 +221,23 @@ class _ChartFrame extends StatelessWidget {
   final ValueChanged<double> onSelect;
 
   @override
-  Widget build(BuildContext context) => Container(
-    height: 200,
+  Widget build(BuildContext context) => GlassPanel(
     padding: const EdgeInsets.fromLTRB(4, 12, 12, 4),
-    decoration: BoxDecoration(
-      color: context.colors.surface,
-      borderRadius: BorderRadius.circular(14),
-    ),
-    child: LayoutBuilder(
-      builder: (context, box) {
-        void at(Offset p) => onSelect(
-          ((p.dx - _Plot.left) / (box.maxWidth - _Plot.left)).clamp(0, 0.999),
-        );
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapDown: (d) => at(d.localPosition),
-          onHorizontalDragUpdate: (d) => at(d.localPosition),
-          child: CustomPaint(painter: painter, size: Size.infinite),
-        );
-      },
+    child: SizedBox(
+      height: 184,
+      child: LayoutBuilder(
+        builder: (context, box) {
+          void at(Offset p) => onSelect(
+            ((p.dx - _Plot.left) / (box.maxWidth - _Plot.left)).clamp(0, 0.999),
+          );
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (d) => at(d.localPosition),
+            onHorizontalDragUpdate: (d) => at(d.localPosition),
+            child: CustomPaint(painter: painter, size: Size.infinite),
+          );
+        },
+      ),
     ),
   );
 }
@@ -315,7 +314,11 @@ abstract class _Plot extends CustomPainter {
 
   void wicketDot(Canvas canvas, Offset at) {
     canvas
-      ..drawCircle(at, 5, Paint()..color = colors.surface)
+      ..drawCircle(
+        at,
+        5,
+        Paint()..color = Color.alphaBlend(colors.surface, colors.background),
+      )
       ..drawCircle(at, 4, Paint()..color = colors.wicket);
   }
 

@@ -7,6 +7,7 @@ import '../../app/router.dart';
 import '../../auth/auth_providers.dart';
 import '../../core/preferences.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/ui/glass.dart';
 import '../../data/local/app_database.dart';
 import '../../data/match_repository.dart';
 import '../../data/providers.dart';
@@ -20,15 +21,17 @@ class HomeScreen extends ConsumerWidget {
     final text = Theme.of(context).textTheme;
     final matches = ref.watch(matchListProvider);
 
-    return Scaffold(
+    return GlassScaffold(
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
                 children: [
+                  const AppLogo(size: 40),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Text('CricScore', style: text.headlineMedium),
                   ),
@@ -36,7 +39,7 @@ class HomeScreen extends ConsumerWidget {
                   const _AccountMenu(),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
               Expanded(
                 child: switch (matches) {
                   AsyncData(:final value) when value.isEmpty =>
@@ -48,9 +51,11 @@ class HomeScreen extends ConsumerWidget {
                   _ => const SizedBox.shrink(),
                 },
               ),
-              FilledButton(
+              const SizedBox(height: 12),
+              FilledButton.icon(
                 onPressed: () => context.push(Routes.newMatch),
-                child: const Text('New match'),
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('New match'),
               ),
               const _Version(),
             ],
@@ -68,19 +73,26 @@ class _EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final text = Theme.of(context).textTheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(Icons.sports_cricket, size: 56, color: colors.runs),
-        const SizedBox(height: 16),
-        Text('No matches yet', style: text.titleLarge),
-        const SizedBox(height: 4),
-        Text(
-          'Start a match and it will be saved here automatically.',
-          style: text.bodyMedium?.copyWith(color: colors.muted),
+    return Center(
+      child: GlassPanel(
+        radius: 28,
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const AppLogo(size: 72),
+            const SizedBox(height: 20),
+            Text('No matches yet', style: text.headlineSmall),
+            const SizedBox(height: 6),
+            Text(
+              'Start a match and every ball is saved here and to your '
+              'account automatically.',
+              textAlign: TextAlign.center,
+              style: text.bodyMedium?.copyWith(color: colors.muted),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
@@ -165,39 +177,100 @@ class _MatchTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
-    return Card(
-      color: colors.surface,
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      child: ListTile(
+    final text = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: GlassPanel(
         key: Key('match-${match.id}'),
+        tint: live ? colors.runs : null,
+        radius: 20,
+        padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
         onTap: () => context.push(
           live ? Routes.match(match.id) : Routes.scorecard(match.id),
         ),
         onLongPress: () => _delete(context, ref),
-        title: Text(match.title),
-        subtitle: Text('${match.format} · ${match.summary}'),
-        trailing: PopupMenuButton<void>(
-          key: Key('matchMenu-${match.id}'),
-          tooltip: 'Match options',
-          icon: Icon(Icons.more_vert, color: colors.muted),
-          itemBuilder: (context) => [
-            if (!live)
-              PopupMenuItem<void>(
-                onTap: () => context.push(Routes.match(match.id)),
-                child: const Text('Open scoring'),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      _Badge(
+                        live ? 'LIVE' : match.format,
+                        color: live ? colors.runs : colors.muted,
+                      ),
+                      if (live) ...[
+                        const SizedBox(width: 8),
+                        Text(
+                          match.format,
+                          style: TextStyle(color: colors.muted, fontSize: 12),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    match.title,
+                    style: text.titleLarge?.copyWith(fontSize: 20),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(match.summary, style: TextStyle(color: colors.muted)),
+                ],
               ),
-            PopupMenuItem<void>(
-              key: const Key('deleteMatch'),
-              onTap: () => _delete(context, ref),
-              child: const Text('Delete'),
             ),
+            _menu(context, ref, colors),
           ],
         ),
-        leading: live ? Icon(Icons.circle, size: 10, color: colors.runs) : null,
-        minLeadingWidth: 10,
       ),
     );
   }
+
+  Widget _menu(BuildContext context, WidgetRef ref, AppColors colors) =>
+      PopupMenuButton<void>(
+        key: Key('matchMenu-${match.id}'),
+        tooltip: 'Match options',
+        icon: Icon(Icons.more_vert, color: colors.muted),
+        itemBuilder: (context) => [
+          if (!live)
+            PopupMenuItem<void>(
+              onTap: () => context.push(Routes.match(match.id)),
+              child: const Text('Open scoring'),
+            ),
+          PopupMenuItem<void>(
+            key: const Key('deleteMatch'),
+            onTap: () => _delete(context, ref),
+            child: const Text('Delete'),
+          ),
+        ],
+      );
+}
+
+class _Badge extends StatelessWidget {
+  const _Badge(this.label, {required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.16),
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: color.withValues(alpha: 0.4)),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(
+        color: color,
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 1,
+      ),
+    ),
+  );
 }
 
 /// A small cloud icon: hidden when all is uploaded.
@@ -236,11 +309,7 @@ class _AccountMenu extends ConsumerWidget {
         PopupMenuItem<void>(enabled: false, child: Text(user?.label ?? '')),
         PopupMenuItem<void>(
           key: const Key('display'),
-          onTap: () => showModalBottomSheet<void>(
-            context: context,
-            showDragHandle: true,
-            builder: (context) => const _DisplaySheet(),
-          ),
+          onTap: () => showGlassSheet<void>(context, const _DisplaySheet()),
           child: const Text('Display'),
         ),
         PopupMenuItem<void>(

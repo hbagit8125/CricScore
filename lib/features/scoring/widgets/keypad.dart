@@ -121,9 +121,10 @@ class Keypad extends StatelessWidget {
             onPressed: onMore,
             style: OutlinedButton.styleFrom(
               foregroundColor: colors.muted,
-              side: BorderSide(color: colors.line),
+              backgroundColor: colors.key.withValues(alpha: colors.key.a * 0.6),
+              side: BorderSide(color: colors.glassBorder),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(14),
               ),
             ),
             child: const Text('More: retire, penalty, change bowler…'),
@@ -176,7 +177,9 @@ class _Row extends StatelessWidget {
   );
 }
 
-class _Key extends StatelessWidget {
+/// One key: frosted glass, or a glowing colour for 4, 6 and W. Sinks a
+/// little under the thumb.
+class _Key extends StatefulWidget {
   const _Key({
     super.key,
     required this.label,
@@ -195,31 +198,77 @@ class _Key extends StatelessWidget {
   final bool small;
 
   @override
+  State<_Key> createState() => _KeyState();
+}
+
+class _KeyState extends State<_Key> {
+  var _down = false;
+
+  void _press(bool down) {
+    if (_down != down) setState(() => _down = down);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final enabled = onTap != null;
+    final enabled = widget.onTap != null;
+    final fill = widget.fill;
+    final base = (fill ?? colors.key).withValues(
+      alpha: enabled ? (fill ?? colors.key).a : (fill ?? colors.key).a * 0.35,
+    );
+    final radius = BorderRadius.circular(18);
     return Semantics(
       button: true,
-      label: semantics,
+      label: widget.semantics,
       enabled: enabled,
       excludeSemantics: true,
-      child: Material(
-        color: (fill ?? colors.key).withValues(alpha: enabled ? 1 : 0.35),
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: onTap,
-          child: SizedBox(
-            height: small ? 48 : 60,
-            child: Center(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontFamily: AppFonts.display,
-                  fontSize: small ? 18 : 26,
-                  fontWeight: FontWeight.w700,
-                  color: (ink ?? colors.foreground).withValues(
-                    alpha: enabled ? 1 : 0.5,
+      child: AnimatedScale(
+        scale: _down ? 0.94 : 1,
+        duration: const Duration(milliseconds: 90),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: radius,
+            border: fill == null ? Border.all(color: colors.glassBorder) : null,
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Color.alphaBlend(
+                  Colors.white.withValues(alpha: colors.isGlass ? 0.10 : 0),
+                  base,
+                ),
+                base,
+              ],
+            ),
+            boxShadow: fill != null && enabled && colors.isGlass
+                ? [
+                    BoxShadow(
+                      color: fill.withValues(alpha: _down ? 0.25 : 0.45),
+                      blurRadius: _down ? 8 : 18,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Material(
+            type: MaterialType.transparency,
+            child: InkWell(
+              borderRadius: radius,
+              onTap: widget.onTap,
+              onHighlightChanged: enabled ? _press : null,
+              child: SizedBox(
+                height: widget.small ? 50 : 62,
+                child: Center(
+                  child: Text(
+                    widget.label,
+                    style: TextStyle(
+                      fontFamily: AppFonts.display,
+                      fontSize: widget.small ? 19 : 28,
+                      fontWeight: FontWeight.w700,
+                      color: (widget.ink ?? colors.foreground).withValues(
+                        alpha: enabled ? 1 : 0.45,
+                      ),
+                    ),
                   ),
                 ),
               ),

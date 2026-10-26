@@ -2,25 +2,13 @@ import 'package:cricket_engine/cricket_engine.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/ui/glass.dart';
 import '../ball_edit.dart';
 import '../scoring_logic.dart';
 import 'score_panels.dart';
 
 Future<T?> showScoringSheet<T>(BuildContext context, Widget child) =>
-    showModalBottomSheet<T>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: context.colors.surface,
-      builder: (context) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * 0.85,
-          ),
-          child: child,
-        ),
-      ),
-    );
+    showGlassSheet<T>(context, child);
 
 class _SheetTitle extends StatelessWidget {
   const _SheetTitle(this.title, {this.subtitle});
@@ -494,10 +482,15 @@ class _Choice extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Material(
-      color: colors.key.withValues(alpha: onTap == null ? 0.35 : 1),
-      borderRadius: BorderRadius.circular(12),
+      color: colors.key.withValues(
+        alpha: colors.key.a * (onTap == null ? 0.35 : 1),
+      ),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: colors.glassBorder),
+      ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         onTap: onTap,
         child: Center(
           child: Padding(

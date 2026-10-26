@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/auth_providers.dart';
 import '../../auth/auth_service.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/ui/glass.dart';
 
 enum _Mode { signIn, createAccount }
 
@@ -91,157 +92,171 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     final text = Theme.of(context).textTheme;
     final creating = _mode == _Mode.createAccount;
 
-    return Scaffold(
+    return GlassScaffold(
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
-              child: Form(
-                key: _form,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Icon(Icons.sports_cricket, size: 48, color: colors.runs),
-                    const SizedBox(height: 12),
-                    Text('CricScore', style: text.headlineMedium),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Sign in to keep your matches safe and share live scores.',
-                      style: text.bodyMedium?.copyWith(color: colors.muted),
-                    ),
-                    const SizedBox(height: 28),
-                    OutlinedButton.icon(
-                      key: const Key('google'),
-                      onPressed: _busy ? null : _google,
-                      icon: const Icon(Icons.login),
-                      label: const Text('Continue with Google'),
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size.fromHeight(52),
-                        foregroundColor: colors.foreground,
-                        side: BorderSide(color: colors.line),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+              child: GlassPanel(
+                radius: 28,
+                padding: const EdgeInsets.fromLTRB(22, 28, 22, 16),
+                child: Form(
+                  key: _form,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Center(child: AppLogo(size: 64)),
+                      const SizedBox(height: 16),
+                      Text(
+                        'CricScore',
+                        textAlign: TextAlign.center,
+                        style: text.headlineMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Sign in to keep your matches safe and share live scores.',
+                        textAlign: TextAlign.center,
+                        style: text.bodyMedium?.copyWith(color: colors.muted),
+                      ),
+                      const SizedBox(height: 28),
+                      OutlinedButton.icon(
+                        key: const Key('google'),
+                        onPressed: _busy ? null : _google,
+                        icon: const Icon(Icons.login),
+                        label: const Text('Continue with Google'),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(52),
+                          foregroundColor: colors.foreground,
+                          backgroundColor: colors.key,
+                          side: BorderSide(color: colors.glassBorder),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        Expanded(child: Divider(color: colors.line)),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          child: Text(
-                            'or with email',
-                            style: text.bodySmall?.copyWith(
-                              color: colors.muted,
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Expanded(child: Divider(color: colors.line)),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Text(
+                              'or with email',
+                              style: text.bodySmall?.copyWith(
+                                color: colors.muted,
+                              ),
                             ),
                           ),
+                          Expanded(child: Divider(color: colors.line)),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      if (creating) ...[
+                        TextFormField(
+                          key: const Key('name'),
+                          controller: _name,
+                          textCapitalization: TextCapitalization.words,
+                          autofillHints: const [AutofillHints.name],
+                          decoration: const InputDecoration(
+                            labelText: 'Your name',
+                          ),
+                          validator: (v) => (v ?? '').trim().isEmpty
+                              ? 'Enter your name.'
+                              : null,
                         ),
-                        Expanded(child: Divider(color: colors.line)),
+                        const SizedBox(height: 12),
                       ],
-                    ),
-                    const SizedBox(height: 20),
-                    if (creating) ...[
                       TextFormField(
-                        key: const Key('name'),
-                        controller: _name,
-                        textCapitalization: TextCapitalization.words,
-                        autofillHints: const [AutofillHints.name],
-                        decoration: const InputDecoration(
-                          labelText: 'Your name',
+                        key: const Key('email'),
+                        controller: _email,
+                        keyboardType: TextInputType.emailAddress,
+                        autofillHints: const [AutofillHints.email],
+                        decoration: const InputDecoration(labelText: 'Email'),
+                        validator: (v) => (v ?? '').trim().contains('@')
+                            ? null
+                            : 'Enter your email address.',
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        key: const Key('password'),
+                        controller: _password,
+                        obscureText: true,
+                        autofillHints: [
+                          if (creating)
+                            AutofillHints.newPassword
+                          else
+                            AutofillHints.password,
+                        ],
+                        decoration: InputDecoration(
+                          labelText: 'Password',
+                          helperText: creating ? 'At least 6 characters' : null,
                         ),
-                        validator: (v) => (v ?? '').trim().isEmpty
-                            ? 'Enter your name.'
+                        validator: (v) => (v ?? '').length < 6
+                            ? 'Use at least 6 characters.'
                             : null,
+                        onFieldSubmitted: (_) => _submitEmail(),
                       ),
-                      const SizedBox(height: 12),
-                    ],
-                    TextFormField(
-                      key: const Key('email'),
-                      controller: _email,
-                      keyboardType: TextInputType.emailAddress,
-                      autofillHints: const [AutofillHints.email],
-                      decoration: const InputDecoration(labelText: 'Email'),
-                      validator: (v) => (v ?? '').trim().contains('@')
-                          ? null
-                          : 'Enter your email address.',
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      key: const Key('password'),
-                      controller: _password,
-                      obscureText: true,
-                      autofillHints: [
-                        if (creating)
-                          AutofillHints.newPassword
-                        else
-                          AutofillHints.password,
-                      ],
-                      decoration: InputDecoration(
-                        labelText: 'Password',
-                        helperText: creating ? 'At least 6 characters' : null,
-                      ),
-                      validator: (v) => (v ?? '').length < 6
-                          ? 'Use at least 6 characters.'
-                          : null,
-                      onFieldSubmitted: (_) => _submitEmail(),
-                    ),
-                    if (_error != null) ...[
-                      const SizedBox(height: 12),
-                      Text(
-                        _error!,
-                        key: const Key('error'),
-                        style: text.bodyMedium?.copyWith(color: colors.wicket),
-                      ),
-                    ],
-                    if (_notice != null) ...[
-                      const SizedBox(height: 12),
-                      Text(
-                        _notice!,
-                        style: text.bodyMedium?.copyWith(color: colors.runs),
-                      ),
-                    ],
-                    const SizedBox(height: 20),
-                    FilledButton(
-                      key: const Key('submit'),
-                      onPressed: _busy ? null : _submitEmail,
-                      child: _busy
-                          ? const SizedBox.square(
-                              dimension: 22,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Text(creating ? 'Create account' : 'Sign in'),
-                    ),
-                    const SizedBox(height: 8),
-                    // Wraps onto two lines on narrow screens or large text.
-                    Wrap(
-                      alignment: WrapAlignment.spaceBetween,
-                      children: [
-                        TextButton(
-                          onPressed: _busy
-                              ? null
-                              : () => setState(() {
-                                  _mode = creating
-                                      ? _Mode.signIn
-                                      : _Mode.createAccount;
-                                  _error = null;
-                                }),
-                          child: Text(
-                            creating
-                                ? 'I have an account'
-                                : 'Create an account',
+                      if (_error != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          _error!,
+                          key: const Key('error'),
+                          style: text.bodyMedium?.copyWith(
+                            color: colors.wicket,
                           ),
                         ),
-                        if (!creating)
-                          TextButton(
-                            onPressed: _busy ? null : _resetPassword,
-                            child: const Text('Forgot password?'),
-                          ),
                       ],
-                    ),
-                  ],
+                      if (_notice != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          _notice!,
+                          style: text.bodyMedium?.copyWith(color: colors.runs),
+                        ),
+                      ],
+                      const SizedBox(height: 20),
+                      FilledButton(
+                        key: const Key('submit'),
+                        onPressed: _busy ? null : _submitEmail,
+                        child: _busy
+                            ? const SizedBox.square(
+                                dimension: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Text(creating ? 'Create account' : 'Sign in'),
+                      ),
+                      const SizedBox(height: 8),
+                      // Wraps onto two lines on narrow screens or large text.
+                      Wrap(
+                        alignment: WrapAlignment.spaceBetween,
+                        children: [
+                          TextButton(
+                            onPressed: _busy
+                                ? null
+                                : () => setState(() {
+                                    _mode = creating
+                                        ? _Mode.signIn
+                                        : _Mode.createAccount;
+                                    _error = null;
+                                  }),
+                            child: Text(
+                              creating
+                                  ? 'I have an account'
+                                  : 'Create an account',
+                            ),
+                          ),
+                          if (!creating)
+                            TextButton(
+                              onPressed: _busy ? null : _resetPassword,
+                              child: const Text('Forgot password?'),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

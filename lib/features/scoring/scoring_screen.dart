@@ -8,6 +8,8 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../app/router.dart';
 import '../../core/preferences.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/ui/glass.dart';
 import '../../data/providers.dart';
 import 'ball_edit.dart';
 import 'scoring_logic.dart';
@@ -38,6 +40,16 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
   /// The batter who just came in automatically, shown with a Change button
   /// until the next ball. Not a snackbar, which would cover the keypad.
   ({int index, ChooseBatter question})? _cameIn;
+
+  /// The last celebration: FOUR!, SIX! or OUT!, replayed when [id] changes.
+  ({int id, String text, Color color})? _burst;
+
+  void _celebrate(String text, Color color) {
+    if (MediaQuery.disableAnimationsOf(context)) return;
+    setState(
+      () => _burst = (id: (_burst?.id ?? 0) + 1, text: text, color: color),
+    );
+  }
 
   MatchController get _controller =>
       ref.read(matchControllerProvider(widget.matchId).notifier);
@@ -73,11 +85,11 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
 
     return switch (async) {
       AsyncData(:final value) => _scaffold(value),
-      AsyncError(:final error) => Scaffold(
+      AsyncError(:final error) => GlassScaffold(
         appBar: AppBar(),
         body: Center(child: Text('This match could not be opened.\n$error')),
       ),
-      _ => const Scaffold(body: SizedBox.shrink()),
+      _ => const GlassScaffold(body: SizedBox.shrink()),
     };
   }
 
@@ -92,7 +104,7 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
     final nameOf = nameLookup(setup);
     final colors = context.colors;
 
-    return Scaffold(
+    return GlassScaffold(
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -124,8 +136,27 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      ScoreHeader(innings: inn, setup: setup),
-                      const SizedBox(height: 14),
+                      GlassPanel(
+                        tint: colors.runs,
+                        radius: 26,
+                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
+                        child: Stack(
+                          children: [
+                            ScoreHeader(innings: inn, setup: setup),
+                            if (_burst case final b?)
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  child: _Burst(
+                                    key: ValueKey(b.id),
+                                    text: b.text,
+                                    color: b.color,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       if (_cameIn case final c?) ...[
                         _CameInBanner(
                           name: nameOf(c.question.suggested),
@@ -137,11 +168,18 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
                         BattersPanel(innings: inn, nameOf: nameOf),
                         const SizedBox(height: 8),
                         BowlerPanel(innings: inn, nameOf: nameOf),
-                        const SizedBox(height: 14),
-                        OverStrip(
-                          innings: inn,
-                          rules: setup.rules,
-                          onBallTap: (d) => _editBall(match, d),
+                        const SizedBox(height: 8),
+                        GlassPanel(
+                          radius: 18,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          child: OverStrip(
+                            innings: inn,
+                            rules: setup.rules,
+                            onBallTap: (d) => _editBall(match, d),
+                          ),
                         ),
                       ],
                     ],
@@ -149,7 +187,11 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              _bottom(match),
+              GlassPanel(
+                radius: 28,
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                child: _bottom(match),
+              ),
             ],
           ),
         ),
@@ -253,6 +295,8 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
 
   // ------------------------------------------------------------ actions
 
+  AppColors get _colors => context.colors;
+
   Future<bool> _apply(MatchEvent event) async {
     try {
       await _controller.apply(event);
@@ -270,6 +314,9 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
     final delivery = deliveryFor(_armed, runs);
     setState(() => _armed = ArmedExtra.none);
     if (await _apply(delivery)) {
+      if (delivery.boundary != 0 && delivery.runsTo == RunsTo.batter) {
+        _celebrate(delivery.boundary == 6 ? 'SIX!' : 'FOUR!', _colors.runs);
+      }
       if (delivery.boundary != 0) {
         await HapticFeedback.mediumImpact();
       } else {
@@ -293,7 +340,10 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
     );
     if (delivery == null || !mounted) return;
     setState(() => _armed = ArmedExtra.none);
-    if (await _apply(delivery)) await HapticFeedback.heavyImpact();
+    if (await _apply(delivery)) {
+      _celebrate('OUT!', _colors.wicket);
+      await HapticFeedback.heavyImpact();
+    }
   }
 
   Future<void> _undo() async {
@@ -825,4 +875,46 @@ class _CameInBanner extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A big word that springs up and fades: FOUR!, SIX! or OUT!.
+class _Burst extends StatelessWidget {
+  const _Burst({super.key, required this.text, required this.color});
+
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+    tween: Tween(begin: 0, end: 1),
+    duration: const Duration(milliseconds: 1200),
+    builder: (context, t, _) {
+      if (t >= 1) return const SizedBox.shrink();
+      final grow = Curves.easeOutBack.transform((t / 0.35).clamp(0, 1));
+      final fade = t < 0.6 ? 1.0 : 1 - (t - 0.6) / 0.4;
+      return Align(
+        alignment: Alignment.centerRight,
+        child: Opacity(
+          opacity: fade.clamp(0, 1),
+          child: Transform.scale(
+            scale: 0.5 + 0.5 * grow,
+            child: Text(
+              text,
+              style: TextStyle(
+                fontFamily: AppFonts.display,
+                fontSize: 46,
+                fontWeight: FontWeight.w700,
+                fontStyle: FontStyle.italic,
+                letterSpacing: 1,
+                color: color,
+                shadows: [
+                  Shadow(color: color.withValues(alpha: 0.7), blurRadius: 28),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+  );
 }
