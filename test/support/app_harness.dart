@@ -65,6 +65,17 @@ class AppHarness {
 
   Future<void> tapKey(String key) => tap(find.byKey(Key(key)));
 
+  /// Taps an item further down a list in a sheet, scrolling to it first.
+  Future<void> tapInList(String key) async {
+    final finder = find.byKey(Key(key));
+    await tester.scrollUntilVisible(
+      finder,
+      150,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tap(finder);
+  }
+
   /// Unmounts and closes the database so no timers are left running.
   Future<void> stop() async {
     await tester.pumpWidget(const SizedBox.shrink());

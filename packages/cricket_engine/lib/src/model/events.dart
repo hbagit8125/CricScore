@@ -23,17 +23,24 @@ final class OpenersSelected extends MatchEvent {
 
 /// The bowler for the next over, or a replacement who finishes the current
 /// over (Law 17.8).
+///
+/// With [umpireAllowed] the umpire let the bowler bowl although the
+/// records say they may not (consecutive overs or their allowance of
+/// overs). The scorer records what happened on the field.
 final class BowlerSelected extends MatchEvent {
-  const BowlerSelected(this.bowlerId);
+  const BowlerSelected(this.bowlerId, {this.umpireAllowed = false});
 
   final String bowlerId;
+  final bool umpireAllowed;
 
   @override
   bool operator ==(Object other) =>
-      other is BowlerSelected && other.bowlerId == bowlerId;
+      other is BowlerSelected &&
+      other.bowlerId == bowlerId &&
+      other.umpireAllowed == umpireAllowed;
 
   @override
-  int get hashCode => bowlerId.hashCode;
+  int get hashCode => Object.hash(bowlerId, umpireAllowed);
 }
 
 /// A new or returning batter takes the vacant end.

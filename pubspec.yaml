@@ -1,7 +1,7 @@
 name: cric_score
 description: Cricket scoring for every format, built on the Laws of Cricket.
 publish_to: 'none'
-version: 0.2.0+1
+version: 0.3.0+1
 
 environment:
   sdk: ^3.9.0
@@ -27,6 +27,8 @@ dependencies:
   firebase_auth: ^6.7.1
   cloud_firestore: ^6.10.2
   google_sign_in: ^7.2.0
+  wakelock_plus: ^1.8.2
+  package_info_plus: ^10.2.2
 
 dev_dependencies:
   flutter_test:

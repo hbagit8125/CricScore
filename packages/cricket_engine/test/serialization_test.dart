@@ -19,6 +19,7 @@ void main() {
     const events = <MatchEvent>[
       OpenersSelected(strikerId: 'A1', nonStrikerId: 'A2'),
       BowlerSelected('B11'),
+      BowlerSelected('B10', umpireAllowed: true),
       BatterIn('A3'),
       SwapStrike(),
       Retired('A1', out: false),

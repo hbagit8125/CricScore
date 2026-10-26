@@ -140,6 +140,16 @@ class MatchRepository {
     });
   }
 
+  /// Stores a changed setup (for example a renamed player) for [match].
+  Future<void> updateSetup(String id, Match match) => _db.transaction(() async {
+    await (_db.update(_db.matches)..where((m) => m.id.equals(id))).write(
+      MatchesCompanion(
+        setupJson: Value(jsonEncode(MatchJson.setupToJson(match.setup))),
+      ),
+    );
+    await _updateSummary(id, match);
+  });
+
   /// Deletes the match here and, once online, from the cloud.
   Future<void> delete(String id) => _db.transaction(() async {
     final row = await (_db.select(

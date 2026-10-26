@@ -46,6 +46,21 @@ class AppColors extends ThemeExtension<AppColors> {
     onSemantic: Color(0xFFFFFFFF),
   );
 
+  /// High contrast for bright sunshine: black on white, deeper semantic
+  /// colours.
+  static const outdoor = AppColors(
+    background: Color(0xFFFFFFFF),
+    surface: Color(0xFFF2F2F2),
+    key: Color(0xFFE0E0E0),
+    foreground: Color(0xFF000000),
+    muted: Color(0xFF2E2E2E),
+    line: Color(0xFF000000),
+    runs: Color(0xFF00632A),
+    wicket: Color(0xFFB00020),
+    extras: Color(0xFF7A3E00),
+    onSemantic: Color(0xFFFFFFFF),
+  );
+
   final Color background;
   final Color surface;
 

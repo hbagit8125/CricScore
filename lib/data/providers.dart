@@ -96,6 +96,41 @@ class MatchController extends AsyncNotifier<Match> {
     state = AsyncData(after);
   });
 
+  /// Replaces the whole event log, for corrections to earlier balls.
+  /// Throws [IllegalEventException], leaving the match unchanged, when the
+  /// corrected log does not hold together.
+  Future<void> replaceEvents(List<MatchEvent> events) => _serial(() async {
+    final before = await future;
+    final after = Match.replay(before.setup, events);
+    await _repo.rewrite(matchId, after);
+    state = AsyncData(after);
+  });
+
+  /// Renames a player. Players are recorded by id, so the scoring is
+  /// unchanged.
+  Future<void> renamePlayer(String playerId, String name) => _serial(() async {
+    final before = await future;
+    TeamSheet rename(TeamSheet t) => TeamSheet(
+      id: t.id,
+      name: t.name,
+      players: [for (final p in t.players) _renamed(p, playerId, name)],
+      substitutes: [for (final p in t.substitutes) _renamed(p, playerId, name)],
+    );
+    final s = before.setup;
+    final setup = MatchSetup(
+      rules: s.rules,
+      teamA: rename(s.teamA),
+      teamB: rename(s.teamB),
+      toss: s.toss,
+    );
+    final after = Match.replay(setup, before.events);
+    await _repo.updateSetup(matchId, after);
+    state = AsyncData(after);
+  });
+
+  static PlayerRef _renamed(PlayerRef p, String id, String name) =>
+      p.id == id ? PlayerRef(id: id, name: name.trim()) : p;
+
   /// Runs changes one at a time so taps in quick succession are stored in
   /// order.
   Future<void> _serial(Future<void> Function() change) {

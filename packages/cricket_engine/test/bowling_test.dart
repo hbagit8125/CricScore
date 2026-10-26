@@ -102,6 +102,29 @@ void main() {
     });
   });
 
+  group('umpire allows a bowler against the records', () {
+    test('a second consecutive over stands', () {
+      m = m.bowl(6).apply(const BowlerSelected('B11', umpireAllowed: true));
+      m = m.bowl(6);
+      expect(m.inn.bowler('B11')!.legalBalls, 12);
+    });
+
+    test('beyond the quota', () {
+      m = started(MatchRules.t10);
+      m = m.bowl(6).over('B10').bowl(6).over('B11').bowl(6).over('B10').bowl(6);
+      m = m.apply(const BowlerSelected('B11', umpireAllowed: true)).bowl(6);
+      expect(m.inn.bowler('B11')!.legalBalls, 18);
+    });
+
+    test('but the bowler of the over cannot replace themselves', () {
+      m = m.bowl(2);
+      expect(
+        () => m.apply(const BowlerSelected('B11', umpireAllowed: true)),
+        throwsIllegal(IllegalEventCode.bowlerIneligible),
+      );
+    });
+  });
+
   test('The Hundred allows ten balls in a row but not fifteen', () {
     m = started(MatchRules.hundred).bowl(5).over('B11').bowl(5);
     final q = m.state.pending.single as ChooseBowler;

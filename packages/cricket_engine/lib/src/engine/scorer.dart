@@ -42,6 +42,9 @@ final class Scorer {
   /// Follow-on margin adjusted for lost time, overriding the rules.
   int? _followOnMargin;
 
+  /// Events applied so far; the log position of the event being applied.
+  int _applied = 0;
+
   MatchRules get rules => setup.rules;
 
   // ---------------------------------------------------------------- events
@@ -68,7 +71,7 @@ final class Scorer {
       case OpenersSelected():
         _openers(event);
       case BowlerSelected():
-        _selectBowler(event.bowlerId);
+        _selectBowler(event.bowlerId, umpireAllowed: event.umpireAllowed);
       case BatterIn():
         _batterIn(event.batterId);
       case SwapStrike():
@@ -110,6 +113,7 @@ final class Scorer {
       case Delivery():
         _delivery(event);
     }
+    _applied++;
   }
 
   _Innings get _current => _innings.last;
@@ -148,7 +152,7 @@ final class Scorer {
     inn.partnerships.add(_Partnership([e.strikerId, e.nonStrikerId]));
   }
 
-  void _selectBowler(String id) {
+  void _selectBowler(String id, {bool umpireAllowed = false}) {
     final inn = _open;
     _requireOpeners(inn);
     if (!_roster[inn.bowlingTeamId]!.contains(id)) {
@@ -160,7 +164,10 @@ final class Scorer {
     final current = inn.currentOver;
     final midOver = current != null && current.deliveries.isNotEmpty;
     final reason = _bowlerIneligibility(inn, id, midOver: midOver);
-    if (reason != null) {
+    // The umpire may let a bowler continue against the records, but the
+    // bowler of the over cannot replace themselves.
+    if (reason != null &&
+        !(umpireAllowed && reason != BowlerIneligibility.currentBowler)) {
       throw IllegalEventException(
         IllegalEventCode.bowlerIneligible,
         '${_name(id)} cannot bowl: ${_ineligibilityText(reason)}.',
@@ -574,6 +581,7 @@ final class Scorer {
         teamRuns: inn.runs,
         totalRuns: teamRuns,
         wasFreeHit: freeHit,
+        eventIndex: _applied,
       ),
     );
 

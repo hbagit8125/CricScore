@@ -30,6 +30,8 @@ Future<void> startMatch(AppHarness app, {String? format}) async {
 }
 
 void main() {
+  p3b();
+
   testWidgets('a new match starts in four taps from home', (tester) async {
     final app = AppHarness(tester);
     await app.start();
@@ -242,4 +244,111 @@ void main() {
     expect(overChanges, 38, reason: '19 changes in each innings');
     await app.stop();
   }, timeout: const Timeout(Duration(minutes: 10)));
+}
+
+void p3b() {
+  testWidgets('tapping a recorded ball corrects it', (tester) async {
+    final app = AppHarness(tester);
+    await app.start();
+    await startMatch(app);
+    await app.tapKey('runs1');
+    final ball = innings(tester).overs.last.deliveries.single;
+    await app.tapKey('ball-${ball.eventIndex}');
+    await app.tapKey('edit-runs4');
+    expect(find.text('4/0'), findsOneWidget);
+    expect(innings(tester).batters.first.fours, 1);
+    await app.stop();
+  });
+
+  testWidgets('More: retire hurt, then penalty runs', (tester) async {
+    final app = AppHarness(tester);
+    await app.start();
+    await startMatch(app);
+    final striker = innings(tester).strikerId!;
+
+    await app.tapKey('more');
+    await app.tapKey('more-retire');
+    await app.tapKey('retire-$striker-hurt');
+    expect(innings(tester).batter(striker)!.status, BatterStatus.retiredNotOut);
+    expect(innings(tester).strikerId, isNot(striker));
+    expect(innings(tester).wickets, 0);
+
+    await app.tapKey('more');
+    await app.tapInList('more-penalty');
+    await app.tapKey('penalty-${innings(tester).battingTeamId}');
+    expect(find.text('5/0'), findsOneWidget);
+    await app.stop();
+  });
+
+  testWidgets('the umpire lets a bowler bowl a second over in a row', (
+    tester,
+  ) async {
+    final app = AppHarness(tester);
+    await app.start();
+    await startMatch(app);
+    final bowler = innings(tester).bowlerId!;
+    for (var i = 0; i < 6; i++) {
+      await app.tapKey('runs0');
+    }
+    await app.tapInList('bowler-$bowler');
+    await app.tapKey('umpireAllowed');
+    expect(innings(tester).bowlerId, bowler);
+    final last = current(tester).events.last as BowlerSelected;
+    expect(last.umpireAllowed, isTrue);
+    await app.stop();
+  });
+
+  testWidgets('rename a player mid-match', (tester) async {
+    final app = AppHarness(tester);
+    await app.start();
+    await startMatch(app);
+    final striker = innings(tester).strikerId!;
+    await app.tapKey('more');
+    await app.tapInList('more-renamePlayer');
+    await app.tapInList('rename-$striker');
+    await tester.enterText(find.byKey(const Key('newName')), 'Babar Azam');
+    await app.tapKey('saveName');
+    expect(find.text('Babar Azam'), findsOneWidget);
+    await app.stop();
+  });
+
+  testWidgets('abandon gives no result, and undo takes it back', (
+    tester,
+  ) async {
+    final app = AppHarness(tester);
+    await app.start();
+    await startMatch(app);
+    await app.tapKey('more');
+    await app.tapInList('more-abandon');
+    await app.tapKey('confirm');
+    expect(find.byKey(const Key('result')), findsOneWidget);
+    expect(current(tester).state.result, isA<NoResult>());
+    await app.tap(find.text('Undo last ball'));
+    expect(current(tester).state.result, isNull);
+    await app.stop();
+  });
+
+  testWidgets('scorecard and charts', (tester) async {
+    final app = AppHarness(tester);
+    await app.start();
+    await startMatch(app);
+    final striker = innings(tester).strikerId!;
+    for (final k in ['runs4', 'runs1', 'runs6', 'runs0', 'runs2', 'runs1']) {
+      await app.tapKey(k);
+    }
+    await app.tap(find.text('Suggested'));
+    await app.tapKey('runs1');
+
+    await app.tapKey('scorecard');
+    expect(find.byKey(Key('bat-$striker')), findsOneWidget);
+    expect(find.text('Fall of wickets'.toUpperCase()), findsNothing);
+    expect(find.text('Over 1'), findsOneWidget);
+
+    await app.tapKey('chartsTab');
+    expect(find.byKey(const Key('worm')), findsOneWidget);
+    expect(find.byKey(const Key('manhattan')), findsOneWidget);
+    await app.tap(find.byKey(const Key('manhattan')));
+    expect(find.byKey(const Key('chartReadout')), findsOneWidget);
+    await app.stop();
+  });
 }
