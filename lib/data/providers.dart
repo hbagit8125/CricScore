@@ -29,6 +29,12 @@ final teamRepositoryProvider = Provider<TeamRepository>(
   ),
 );
 
+/// Saved teams, most recently used first.
+final savedTeamsProvider =
+    StreamProvider<List<({String id, String name, List<PlayerRef> players})>>(
+      (ref) => ref.watch(teamRepositoryProvider).watchAll(),
+    );
+
 /// Saved matches, most recent first.
 final matchListProvider = StreamProvider<List<MatchSummary>>(
   (ref) => ref.watch(matchRepositoryProvider).watchAll(),
@@ -60,6 +66,24 @@ class MatchController extends AsyncNotifier<Match> {
     final before = await future;
     if (!before.canUndo) return;
     final after = before.undo();
+    await _repo.rewrite(matchId, after);
+    state = AsyncData(after);
+  });
+
+  /// Takes back the scorer's last action. Selections that followed it
+  /// automatically or as a direct consequence (next batter, next bowler,
+  /// openers) go with it, so undo after a wicket restores the batter
+  /// rather than bringing the same new batter straight back in.
+  Future<void> undoLastAction() => _serial(() async {
+    final before = await future;
+    if (!before.canUndo) return;
+    var after = before;
+    bool isSelection(MatchEvent e) =>
+        e is BatterIn || e is BowlerSelected || e is OpenersSelected;
+    while (after.canUndo && isSelection(after.events.last)) {
+      after = after.undo();
+    }
+    if (after.canUndo) after = after.undo();
     await _repo.rewrite(matchId, after);
     state = AsyncData(after);
   });

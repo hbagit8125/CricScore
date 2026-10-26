@@ -30,6 +30,10 @@ abstract final class AppTheme {
       onSurfaceVariant: c.muted,
       outline: c.line,
       surfaceContainerHighest: c.key,
+      // Selected chips and segments use the runs green; amber is kept for
+      // extras only.
+      secondaryContainer: c.runs,
+      onSecondaryContainer: c.onSemantic,
     );
 
     final base = ThemeData(

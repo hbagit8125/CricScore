@@ -138,6 +138,8 @@ class _MatchTile extends StatelessWidget {
       color: colors.surface,
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
+        key: Key('match-${match.id}'),
+        onTap: () => context.push(Routes.match(match.id)),
         title: Text(match.title),
         subtitle: Text('${match.format} · ${match.summary}'),
         trailing: live

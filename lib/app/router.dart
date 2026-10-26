@@ -6,6 +6,7 @@ import '../auth/auth_providers.dart';
 import '../features/auth/sign_in_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/match_setup/new_match_screen.dart';
+import '../features/scoring/scoring_screen.dart';
 
 /// Route paths, kept in one place so screens never hard-code strings.
 abstract final class Routes {
@@ -13,6 +14,9 @@ abstract final class Routes {
   static const signIn = '/sign-in';
   static const home = '/';
   static const newMatch = '/match/new';
+  static const matchPattern = '/match/:id';
+
+  static String match(String id) => '/match/$id';
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -50,6 +54,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.newMatch,
         builder: (context, state) => const NewMatchScreen(),
+      ),
+      GoRoute(
+        path: Routes.matchPattern,
+        builder: (context, state) =>
+            ScoringScreen(matchId: state.pathParameters['id']!),
       ),
     ],
   );
