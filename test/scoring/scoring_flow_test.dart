@@ -342,6 +342,15 @@ void p3b() {
     await app.tapKey('scorecard');
     expect(find.byKey(Key('bat-$striker')), findsOneWidget);
     expect(find.text('Fall of wickets'.toUpperCase()), findsNothing);
+    await tester.scrollUntilVisible(
+      find.text('Over 1'),
+      200,
+      scrollable: find
+          .byWidgetPredicate(
+            (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+          )
+          .first,
+    );
     expect(find.text('Over 1'), findsOneWidget);
 
     await app.tapKey('chartsTab');

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/ui/glass.dart';
 import '../scoring_logic.dart';
 
 /// Looks up player names across both squads.
@@ -65,17 +66,47 @@ class ScoreHeader extends StatelessWidget {
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.bottomLeft,
-                child: Text(
-                  '${inn.runs}/${inn.wickets}',
-                  key: const Key('score'),
-                  maxLines: 1,
-                  style: const TextStyle(
-                    fontFamily: AppFonts.display,
-                    fontSize: 56,
-                    fontWeight: FontWeight.w700,
-                    height: 1,
-                    fontFeatures: [FontFeature.tabularFigures()],
-                  ).copyWith(color: colors.foreground),
+                // The new score rolls up into place.
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 260),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  layoutBuilder: (current, previous) => Stack(
+                    alignment: Alignment.bottomLeft,
+                    children: [...previous, ?current],
+                  ),
+                  transitionBuilder: (child, animation) => FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: Tween(
+                        begin: const Offset(0, 0.35),
+                        end: Offset.zero,
+                      ).animate(animation),
+                      child: child,
+                    ),
+                  ),
+                  child: Text(
+                    '${inn.runs}/${inn.wickets}',
+                    key: ValueKey('score-${inn.runs}-${inn.wickets}'),
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontFamily: AppFonts.display,
+                      fontSize: 64,
+                      fontWeight: FontWeight.w700,
+                      height: 1,
+                      letterSpacing: -0.5,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                      color: colors.foreground,
+                      shadows: colors.isGlass
+                          ? [
+                              Shadow(
+                                color: colors.runs.withValues(alpha: 0.35),
+                                blurRadius: 24,
+                              ),
+                            ]
+                          : null,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -301,11 +332,11 @@ class BallChip extends StatelessWidget {
     final d = record?.delivery;
     if (d == null) {
       return Container(
-        width: 30,
-        height: 30,
+        width: 32,
+        height: 32,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          border: Border.all(color: colors.line),
+          border: Border.all(color: colors.glassBorder),
         ),
       );
     }
@@ -322,13 +353,20 @@ class BallChip extends StatelessWidget {
         : extra
         ? colors.extras
         : colors.foreground;
-    final chip = Container(
-      constraints: const BoxConstraints(minWidth: 30),
-      height: 30,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+    final glow = (wicket || boundary) && colors.isGlass;
+    Widget chip = Container(
+      constraints: const BoxConstraints(minWidth: 32),
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: 9),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(15),
+        borderRadius: BorderRadius.circular(16),
+        border: wicket || boundary
+            ? null
+            : Border.all(color: colors.glassBorder),
+        boxShadow: glow
+            ? [BoxShadow(color: bg.withValues(alpha: 0.55), blurRadius: 12)]
+            : null,
       ),
       // widthFactor keeps the chip as narrow as its label.
       child: Center(
@@ -342,6 +380,17 @@ class BallChip extends StatelessWidget {
           ),
         ),
       ),
+    );
+    // New balls pop into the strip.
+    chip = TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.4, end: 1),
+      duration: const Duration(milliseconds: 380),
+      curve: Curves.easeOutBack,
+      builder: (context, t, child) => Transform.scale(
+        scale: t,
+        child: Opacity(opacity: t.clamp(0, 1), child: child),
+      ),
+      child: chip,
     );
     if (onTap == null) return chip;
     return Semantics(
@@ -358,12 +407,9 @@ class _Card extends StatelessWidget {
   final List<Widget> children;
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-    decoration: BoxDecoration(
-      color: context.colors.surface,
-      borderRadius: BorderRadius.circular(14),
-    ),
+  Widget build(BuildContext context) => GlassPanel(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    radius: 18,
     child: Column(
       children: [
         for (var i = 0; i < children.length; i++) ...[

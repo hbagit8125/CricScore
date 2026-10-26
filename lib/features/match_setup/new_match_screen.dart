@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../app/router.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/ui/glass.dart';
 import '../../data/providers.dart';
 
 /// A team being set up: its saved id (if reused) and editable names.
@@ -150,7 +151,7 @@ class _NewMatchScreenState extends ConsumerState<NewMatchScreen> {
     final colors = context.colors;
     final text = Theme.of(context).textTheme;
 
-    return Scaffold(
+    return GlassScaffold(
       appBar: AppBar(title: const Text('New match')),
       body: a == null || b == null
           ? const SizedBox.shrink()
@@ -159,44 +160,52 @@ class _NewMatchScreenState extends ConsumerState<NewMatchScreen> {
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
                 children: [
                   const _Label('Format'),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final f in _formats)
-                        ChoiceChip(
-                          label: Text(f.name),
-                          selected: _preset == f,
-                          onSelected: (_) => setState(() => _preset = f),
+                  GlassPanel(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final f in _formats)
+                              ChoiceChip(
+                                label: Text(f.name),
+                                selected: _preset == f,
+                                onSelected: (_) => setState(() => _preset = f),
+                              ),
+                            ChoiceChip(
+                              label: const Text('Custom'),
+                              selected: _preset == null,
+                              onSelected: (_) => setState(() => _preset = null),
+                            ),
+                          ],
                         ),
-                      ChoiceChip(
-                        label: const Text('Custom'),
-                        selected: _preset == null,
-                        onSelected: (_) => setState(() => _preset = null),
-                      ),
-                    ],
-                  ),
-                  if (_preset == null) ...[
-                    const SizedBox(height: 12),
-                    _Stepper(
-                      label: 'Overs a side',
-                      value: _customOvers,
-                      min: 1,
-                      max: 50,
-                      onChanged: (v) => setState(() => _customOvers = v),
+                        if (_preset == null) ...[
+                          const SizedBox(height: 12),
+                          _Stepper(
+                            label: 'Overs a side',
+                            value: _customOvers,
+                            min: 1,
+                            max: 50,
+                            onChanged: (v) => setState(() => _customOvers = v),
+                          ),
+                          _Stepper(
+                            label: 'Players a side',
+                            value: _customPlayers,
+                            min: 2,
+                            max: 11,
+                            onChanged: (v) =>
+                                setState(() => _customPlayers = v),
+                          ),
+                        ],
+                        const SizedBox(height: 12),
+                        Text(
+                          _summary(_rules),
+                          style: text.bodySmall?.copyWith(color: colors.muted),
+                        ),
+                      ],
                     ),
-                    _Stepper(
-                      label: 'Players a side',
-                      value: _customPlayers,
-                      min: 2,
-                      max: 11,
-                      onChanged: (v) => setState(() => _customPlayers = v),
-                    ),
-                  ],
-                  const SizedBox(height: 8),
-                  Text(
-                    _summary(_rules),
-                    style: text.bodySmall?.copyWith(color: colors.muted),
                   ),
                   const _Label('Teams'),
                   _TeamEditor(
@@ -212,23 +221,34 @@ class _NewMatchScreenState extends ConsumerState<NewMatchScreen> {
                     players: _rules.playersPerSide,
                     onChanged: () => setState(() {}),
                   ),
-                  const _Label('Toss won by'),
-                  _Segments(
-                    labels: [
-                      _shown(a.name.text, 'Team A'),
-                      _shown(b.name.text, 'Team B'),
-                    ],
-                    selected: _tossWinner,
-                    onSelected: (i) => setState(() => _tossWinner = i),
-                  ),
-                  const _Label('Chose to'),
-                  _Segments(
-                    labels: const ['Bat', 'Bowl'],
-                    selected: _tossDecision == TossDecision.bat ? 0 : 1,
-                    onSelected: (i) => setState(
-                      () => _tossDecision = i == 0
-                          ? TossDecision.bat
-                          : TossDecision.bowl,
+                  const _Label('Toss'),
+                  GlassPanel(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text('Won by', style: TextStyle(color: colors.muted)),
+                        const SizedBox(height: 8),
+                        _Segments(
+                          labels: [
+                            _shown(a.name.text, 'Team A'),
+                            _shown(b.name.text, 'Team B'),
+                          ],
+                          selected: _tossWinner,
+                          onSelected: (i) => setState(() => _tossWinner = i),
+                        ),
+                        const SizedBox(height: 14),
+                        Text('Chose to', style: TextStyle(color: colors.muted)),
+                        const SizedBox(height: 8),
+                        _Segments(
+                          labels: const ['Bat', 'Bowl'],
+                          selected: _tossDecision == TossDecision.bat ? 0 : 1,
+                          onSelected: (i) => setState(
+                            () => _tossDecision = i == 0
+                                ? TossDecision.bat
+                                : TossDecision.bowl,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   if (_error != null) ...[
@@ -384,18 +404,21 @@ class _TeamEditor extends StatelessWidget {
         .take(players)
         .where((p) => p.name.text.trim().isNotEmpty)
         .length;
-    return Card(
-      color: colors.surface,
-      margin: EdgeInsets.zero,
+    return GlassPanel(
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           title: TextField(
             controller: draft.name,
             textCapitalization: TextCapitalization.words,
+            style: Theme.of(context).textTheme.titleLarge,
             decoration: const InputDecoration(
               labelText: 'Team name',
+              filled: false,
               border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
             ),
             onChanged: (_) => onChanged(),
           ),
@@ -408,13 +431,16 @@ class _TeamEditor extends StatelessWidget {
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           children: [
             for (var i = 0; i < players; i++)
-              TextField(
-                controller: draft.players[i].name,
-                textCapitalization: TextCapitalization.words,
-                decoration: InputDecoration(
-                  isDense: true,
-                  labelText: '${i + 1}',
-                  hintText: 'Player ${i + 1}',
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: TextField(
+                  controller: draft.players[i].name,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    labelText: '${i + 1}',
+                    hintText: 'Player ${i + 1}',
+                  ),
                 ),
               ),
           ],

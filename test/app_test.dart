@@ -116,7 +116,8 @@ void main() {
     await pumpApp(tester);
     expect(find.text('IN PROGRESS'), findsOneWidget);
     expect(find.text('Lions v Tigers'), findsOneWidget);
-    expect(find.text('Custom · Not started'), findsOneWidget);
+    expect(find.text('LIVE'), findsOneWidget);
+    expect(find.text('Not started'), findsOneWidget);
     expect(find.text('No matches yet'), findsNothing);
     await unmountApp(tester);
   });
