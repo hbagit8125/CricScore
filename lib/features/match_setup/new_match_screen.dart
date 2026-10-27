@@ -45,11 +45,18 @@ class _NewMatchScreenState extends ConsumerState<NewMatchScreen> {
     MatchRules.odi,
     MatchRules.t10,
     MatchRules.hundred,
+    MatchRules.test,
+    MatchRules.firstClass,
   ];
 
   MatchRules? _preset = MatchRules.t20; // null = custom
   int _customOvers = 8;
   int _customPlayers = 8;
+
+  /// Custom matches: one innings each with an overs limit, or two innings
+  /// each over a number of days.
+  var _customTwoInnings = false;
+  int _customDays = 2;
   _TeamDraft? _a;
   _TeamDraft? _b;
   int _tossWinner = 0;
@@ -59,7 +66,15 @@ class _NewMatchScreenState extends ConsumerState<NewMatchScreen> {
 
   MatchRules get _rules =>
       _preset ??
-      MatchRules.custom(overs: _customOvers, playersPerSide: _customPlayers);
+      (_customTwoInnings
+          ? MatchRules.multiDay(
+              days: _customDays,
+              playersPerSide: _customPlayers,
+            )
+          : MatchRules.custom(
+              overs: _customOvers,
+              playersPerSide: _customPlayers,
+            ));
 
   @override
   void dispose() {
@@ -156,115 +171,146 @@ class _NewMatchScreenState extends ConsumerState<NewMatchScreen> {
       body: a == null || b == null
           ? const SizedBox.shrink()
           : SafeArea(
-              child: ListView(
+              // A short form, built in full so every field is reachable.
+              child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-                children: [
-                  const _Label('Format'),
-                  GlassPanel(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            for (final f in _formats)
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const _Label('Format'),
+                    GlassPanel(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              for (final f in _formats)
+                                ChoiceChip(
+                                  label: Text(f.name),
+                                  selected: _preset == f,
+                                  onSelected: (_) =>
+                                      setState(() => _preset = f),
+                                ),
                               ChoiceChip(
-                                label: Text(f.name),
-                                selected: _preset == f,
-                                onSelected: (_) => setState(() => _preset = f),
+                                label: const Text('Custom'),
+                                selected: _preset == null,
+                                onSelected: (_) =>
+                                    setState(() => _preset = null),
                               ),
-                            ChoiceChip(
-                              label: const Text('Custom'),
-                              selected: _preset == null,
-                              onSelected: (_) => setState(() => _preset = null),
+                            ],
+                          ),
+                          if (_preset == null) ...[
+                            const SizedBox(height: 12),
+                            _Segments(
+                              key: const Key('customInnings'),
+                              labels: const ['One innings', 'Two innings'],
+                              selected: _customTwoInnings ? 1 : 0,
+                              onSelected: (i) =>
+                                  setState(() => _customTwoInnings = i == 1),
+                            ),
+                            const SizedBox(height: 4),
+                            if (_customTwoInnings)
+                              _Stepper(
+                                key: const Key('customDays'),
+                                label: 'Days',
+                                value: _customDays,
+                                min: 1,
+                                max: 5,
+                                onChanged: (v) =>
+                                    setState(() => _customDays = v),
+                              )
+                            else
+                              _Stepper(
+                                label: 'Overs a side',
+                                value: _customOvers,
+                                min: 1,
+                                max: 50,
+                                onChanged: (v) =>
+                                    setState(() => _customOvers = v),
+                              ),
+                            _Stepper(
+                              label: 'Players a side',
+                              value: _customPlayers,
+                              min: 2,
+                              max: 11,
+                              onChanged: (v) =>
+                                  setState(() => _customPlayers = v),
                             ),
                           ],
-                        ),
-                        if (_preset == null) ...[
                           const SizedBox(height: 12),
-                          _Stepper(
-                            label: 'Overs a side',
-                            value: _customOvers,
-                            min: 1,
-                            max: 50,
-                            onChanged: (v) => setState(() => _customOvers = v),
-                          ),
-                          _Stepper(
-                            label: 'Players a side',
-                            value: _customPlayers,
-                            min: 2,
-                            max: 11,
-                            onChanged: (v) =>
-                                setState(() => _customPlayers = v),
+                          Text(
+                            _summary(_rules),
+                            style: text.bodySmall?.copyWith(
+                              color: colors.muted,
+                            ),
                           ),
                         ],
-                        const SizedBox(height: 12),
-                        Text(
-                          _summary(_rules),
-                          style: text.bodySmall?.copyWith(color: colors.muted),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                  const _Label('Teams'),
-                  _TeamEditor(
-                    key: const Key('teamA'),
-                    draft: a,
-                    players: _rules.playersPerSide,
-                    onChanged: () => setState(() {}),
-                  ),
-                  const SizedBox(height: 8),
-                  _TeamEditor(
-                    key: const Key('teamB'),
-                    draft: b,
-                    players: _rules.playersPerSide,
-                    onChanged: () => setState(() {}),
-                  ),
-                  const _Label('Toss'),
-                  GlassPanel(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text('Won by', style: TextStyle(color: colors.muted)),
-                        const SizedBox(height: 8),
-                        _Segments(
-                          labels: [
-                            _shown(a.name.text, 'Team A'),
-                            _shown(b.name.text, 'Team B'),
-                          ],
-                          selected: _tossWinner,
-                          onSelected: (i) => setState(() => _tossWinner = i),
-                        ),
-                        const SizedBox(height: 14),
-                        Text('Chose to', style: TextStyle(color: colors.muted)),
-                        const SizedBox(height: 8),
-                        _Segments(
-                          labels: const ['Bat', 'Bowl'],
-                          selected: _tossDecision == TossDecision.bat ? 0 : 1,
-                          onSelected: (i) => setState(
-                            () => _tossDecision = i == 0
-                                ? TossDecision.bat
-                                : TossDecision.bowl,
+                    const _Label('Teams'),
+                    _TeamEditor(
+                      key: const Key('teamA'),
+                      draft: a,
+                      players: _rules.playersPerSide,
+                      onChanged: () => setState(() {}),
+                    ),
+                    const SizedBox(height: 8),
+                    _TeamEditor(
+                      key: const Key('teamB'),
+                      draft: b,
+                      players: _rules.playersPerSide,
+                      onChanged: () => setState(() {}),
+                    ),
+                    const _Label('Toss'),
+                    GlassPanel(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text('Won by', style: TextStyle(color: colors.muted)),
+                          const SizedBox(height: 8),
+                          _Segments(
+                            labels: [
+                              _shown(a.name.text, 'Team A'),
+                              _shown(b.name.text, 'Team B'),
+                            ],
+                            selected: _tossWinner,
+                            onSelected: (i) => setState(() => _tossWinner = i),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 14),
+                          Text(
+                            'Chose to',
+                            style: TextStyle(color: colors.muted),
+                          ),
+                          const SizedBox(height: 8),
+                          _Segments(
+                            labels: const ['Bat', 'Bowl'],
+                            selected: _tossDecision == TossDecision.bat ? 0 : 1,
+                            onSelected: (i) => setState(
+                              () => _tossDecision = i == 0
+                                  ? TossDecision.bat
+                                  : TossDecision.bowl,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  if (_error != null) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      _error!,
-                      style: text.bodyMedium?.copyWith(color: colors.wicket),
+                    if (_error != null) ...[
+                      const SizedBox(height: 16),
+                      Text(
+                        _error!,
+                        style: text.bodyMedium?.copyWith(color: colors.wicket),
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                    FilledButton(
+                      key: const Key('startMatch'),
+                      onPressed: _starting ? null : _start,
+                      child: const Text('Start match'),
                     ),
                   ],
-                  const SizedBox(height: 24),
-                  FilledButton(
-                    key: const Key('startMatch'),
-                    onPressed: _starting ? null : _start,
-                    child: const Text('Start match'),
-                  ),
-                ],
+                ),
               ),
             ),
     );
@@ -279,6 +325,16 @@ class _NewMatchScreenState extends ConsumerState<NewMatchScreen> {
       inningsBalls: balls,
       ballsPerOver: r.ballsPerOver,
     );
+    if (r.isTwoInnings) {
+      final days = r.days;
+      return [
+        if (days != null) days == 1 ? '1 day' : '$days days',
+        'two innings each',
+        '${r.playersPerSide} players',
+        if (r.followOnMargin case final m?) 'follow-on at $m',
+        'declarations',
+      ].join(' · ');
+    }
     return [
       if (balls != null)
         r.ballsPerOver == 5
@@ -316,6 +372,7 @@ class _Label extends StatelessWidget {
 /// Two or more options, one selected; large targets for outdoor use.
 class _Segments extends StatelessWidget {
   const _Segments({
+    super.key,
     required this.labels,
     required this.selected,
     required this.onSelected,
@@ -342,6 +399,7 @@ class _Segments extends StatelessWidget {
 
 class _Stepper extends StatelessWidget {
   const _Stepper({
+    super.key,
     required this.label,
     required this.value,
     required this.min,

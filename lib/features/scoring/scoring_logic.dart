@@ -166,3 +166,65 @@ String ballPosition(Match match, DeliveryRecord ball) {
   }
   return 'Ball';
 }
+
+/// "566/8d", or "forfeited" for an innings given up before it started.
+String inningsScore(InningsState inn) => switch (inn.endReason) {
+  InningsEndReason.forfeited => 'forfeited',
+  InningsEndReason.declared => '${inn.runs}/${inn.wickets}d',
+  _ => '${inn.runs}/${inn.wickets}',
+};
+
+/// "Lead by 45", "Trail by 120" or "Scores level" for the side batting in
+/// a two-innings match, once the other side has batted. Null in the first
+/// innings and while chasing, where [chaseLine] applies instead.
+String? leadLine(MatchState state) {
+  final inn = state.currentInnings;
+  if (inn == null || inn.kind != InningsKind.regular || inn.target != null) {
+    return null;
+  }
+  if (!state.setup.rules.isTwoInnings || inn.number == 1) return null;
+  var diff = 0;
+  for (final i in state.innings) {
+    if (i.kind != InningsKind.regular || i.number > inn.number) continue;
+    diff += i.battingTeamId == inn.battingTeamId ? i.runs : -i.runs;
+  }
+  if (diff == 0) return 'Scores level';
+  return diff > 0 ? 'Lead by $diff' : 'Trail by ${-diff}';
+}
+
+/// "Day 2 of 5" in a match played over days; null otherwise.
+String? dayLabel(MatchState state) {
+  final rules = state.setup.rules;
+  if (!rules.isTwoInnings && rules.days == null) return null;
+  final days = rules.days;
+  return days == null ? 'Day ${state.day}' : 'Day ${state.day} of $days';
+}
+
+String stoppageName(StoppageKind k) => switch (k) {
+  StoppageKind.drinks => 'Drinks',
+  StoppageKind.lunch => 'Lunch',
+  StoppageKind.tea => 'Tea',
+  StoppageKind.stumps => 'Stumps',
+  StoppageKind.weather => 'Rain or bad light',
+  StoppageKind.other => 'Play stopped',
+};
+
+/// Who is playing for [teamId] now, in batting order, with substitutes in
+/// the places of the players they replaced.
+List<String> playingIds(MatchState state, String teamId) {
+  final ids = [for (final p in state.setup.team(teamId).players) p.id];
+  for (final s in state.substitutions) {
+    final i = ids.indexOf(s.outPlayerId);
+    if (i >= 0) ids[i] = s.inPlayerId;
+  }
+  return ids;
+}
+
+/// Named substitutes of [teamId] who have not come on yet.
+List<String> unusedSubstitutes(MatchState state, String teamId) {
+  final used = {for (final s in state.substitutions) s.inPlayerId};
+  return [
+    for (final p in state.setup.team(teamId).substitutes)
+      if (!used.contains(p.id)) p.id,
+  ];
+}

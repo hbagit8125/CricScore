@@ -54,6 +54,7 @@ abstract final class MatchJson {
     'tieBreak': r.tieBreak.name,
     'inningsPerSide': r.inningsPerSide,
     'followOnMargin': r.followOnMargin,
+    'days': ?r.days,
   };
 
   static MatchRules rulesFromJson(Map<String, Object?> j) {
@@ -81,6 +82,7 @@ abstract final class MatchJson {
       tieBreak: TieBreak.values.byName(j['tieBreak']! as String),
       inningsPerSide: j['inningsPerSide']! as int,
       followOnMargin: j['followOnMargin'] as int?,
+      days: j['days'] as int?,
     );
   }
 
@@ -132,6 +134,7 @@ abstract final class MatchJson {
     },
     OverCalledEarly() => {'type': 'overCalledEarly'},
     OverExtended() => {'type': 'overExtended'},
+    Stoppage(:final kind) => {'type': 'stoppage', 'kind': kind.name},
     Delivery() => _deliveryToJson(e),
   };
 
@@ -170,6 +173,7 @@ abstract final class MatchJson {
       ),
       'overCalledEarly' => const OverCalledEarly(),
       'overExtended' => const OverExtended(),
+      'stoppage' => Stoppage(StoppageKind.values.byName(s('kind'))),
       'delivery' => _deliveryFromJson(j),
       final t => throw FormatException('Unknown event type "$t".'),
     };

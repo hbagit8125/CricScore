@@ -1,5 +1,6 @@
 import 'package:cricket_engine/cricket_engine.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 
 import '../auth/auth_providers.dart';
 import 'local/app_database.dart';
@@ -130,6 +131,37 @@ class MatchController extends AsyncNotifier<Match> {
 
   static PlayerRef _renamed(PlayerRef p, String id, String name) =>
       p.id == id ? PlayerRef(id: id, name: name.trim()) : p;
+
+  /// Names a new substitute for [teamId], who can then replace a player.
+  /// Returns their id.
+  Future<String> addSubstitute(String teamId, String name) async {
+    final id = const Uuid().v4();
+    await _serial(() async {
+      final before = await future;
+      final s = before.setup;
+      TeamSheet withSub(TeamSheet t) => t.id != teamId
+          ? t
+          : TeamSheet(
+              id: t.id,
+              name: t.name,
+              players: t.players,
+              substitutes: [
+                ...t.substitutes,
+                PlayerRef(id: id, name: name.trim()),
+              ],
+            );
+      final setup = MatchSetup(
+        rules: s.rules,
+        teamA: withSub(s.teamA),
+        teamB: withSub(s.teamB),
+        toss: s.toss,
+      );
+      final after = Match.replay(setup, before.events);
+      await _repo.updateSetup(matchId, after);
+      state = AsyncData(after);
+    });
+    return id;
+  }
 
   /// Runs changes one at a time so taps in quick succession are stored in
   /// order.

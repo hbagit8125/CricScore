@@ -522,29 +522,40 @@ enum MoreAction {
   changeBowler,
   overCalledEarly,
   penalty,
+  substitute,
+  stoppage,
   revisedTarget,
+  declare,
+  forfeit,
+  followOnMargin,
   renamePlayer,
   endInnings,
+  draw,
   abandon,
 }
 
 class MoreSheet extends StatelessWidget {
-  const MoreSheet({super.key, required this.enabled});
+  const MoreSheet({super.key, required this.enabled, this.visible});
 
   /// Actions that make sense right now; the rest are shown disabled.
   final Set<MoreAction> enabled;
 
+  /// Actions that apply to this format at all; null shows every action.
+  final Set<MoreAction>? visible;
+
   @override
   Widget build(BuildContext context) {
     Widget item(MoreAction a, IconData icon, String title, String subtitle) =>
-        ListTile(
-          key: Key('more-${a.name}'),
-          enabled: enabled.contains(a),
-          leading: Icon(icon),
-          title: Text(title),
-          subtitle: Text(subtitle),
-          onTap: () => Navigator.pop(context, a),
-        );
+        visible != null && !visible!.contains(a)
+        ? const SizedBox.shrink()
+        : ListTile(
+            key: Key('more-${a.name}'),
+            enabled: enabled.contains(a),
+            leading: Icon(icon),
+            title: Text(title),
+            subtitle: Text(subtitle),
+            onTap: () => Navigator.pop(context, a),
+          );
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -604,7 +615,37 @@ class MoreSheet extends StatelessWidget {
                 'Penalty runs',
                 'Five runs awarded to either side',
               ),
+              item(
+                MoreAction.substitute,
+                Icons.people_outline,
+                'Substitute a player',
+                'Concussion or other replacement',
+              ),
               const _Group('Match'),
+              item(
+                MoreAction.stoppage,
+                Icons.free_breakfast_outlined,
+                'Break in play',
+                'Drinks, lunch, tea, stumps, rain',
+              ),
+              item(
+                MoreAction.declare,
+                Icons.front_hand_outlined,
+                'Declare',
+                'Close the innings now',
+              ),
+              item(
+                MoreAction.forfeit,
+                Icons.skip_next_outlined,
+                'Forfeit innings',
+                'Give up this innings before it starts',
+              ),
+              item(
+                MoreAction.followOnMargin,
+                Icons.rule,
+                'Follow-on margin',
+                'Set by the umpires after lost time',
+              ),
               item(
                 MoreAction.revisedTarget,
                 Icons.cloud_outlined,
@@ -622,6 +663,12 @@ class MoreSheet extends StatelessWidget {
                 Icons.stop_circle_outlined,
                 'End innings',
                 'No one else is able to bat',
+              ),
+              item(
+                MoreAction.draw,
+                Icons.handshake_outlined,
+                'Match drawn',
+                'Time has run out',
               ),
               item(
                 MoreAction.abandon,

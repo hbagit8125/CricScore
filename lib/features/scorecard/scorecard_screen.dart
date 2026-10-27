@@ -33,8 +33,14 @@ class ScorecardScreen extends ConsumerWidget {
         if (inn.openersOrBalls) inn,
     ];
     final result = match.state.result;
+    final state = match.state;
+    // Matches over days, or with breaks or substitutes, get a summary first.
+    final summary =
+        setup.rules.isTwoInnings ||
+        state.stoppages.isNotEmpty ||
+        state.substitutions.isNotEmpty;
     return DefaultTabController(
-      length: innings.length + 1,
+      length: innings.length + 1 + (summary ? 1 : 0),
       child: GlassScaffold(
         appBar: AppBar(
           title: Text('${setup.teamA.name} v ${setup.teamB.name}'),
@@ -44,6 +50,7 @@ class ScorecardScreen extends ConsumerWidget {
             isScrollable: true,
             tabAlignment: TabAlignment.start,
             tabs: [
+              if (summary) const Tab(key: Key('summaryTab'), text: 'Summary'),
               for (final inn in innings) Tab(text: inningsLabel(match, inn)),
               const Tab(key: Key('chartsTab'), text: 'Charts'),
             ],
@@ -64,6 +71,7 @@ class ScorecardScreen extends ConsumerWidget {
             Expanded(
               child: TabBarView(
                 children: [
+                  if (summary) _Summary(match: match, innings: innings),
                   for (final inn in innings)
                     _InningsCard(match: match, innings: inn),
                   ChartsView(match: match),
@@ -110,8 +118,8 @@ class _InningsCard extends StatelessWidget {
     final text = Theme.of(context).textTheme;
     final batted = inn.batters.map((b) => b.playerId).toSet();
     final yetToBat = [
-      for (final p in setup.team(inn.battingTeamId).players)
-        if (!batted.contains(p.id)) p.id,
+      for (final id in playingIds(match.state, inn.battingTeamId))
+        if (!batted.contains(id)) id,
     ];
     final e = inn.extras;
     final muted = TextStyle(color: colors.muted);
@@ -127,7 +135,7 @@ class _InningsCard extends StatelessWidget {
       children: [
         panel(tint: colors.runs, [
           Text(
-            '${inn.runs}/${inn.wickets}  (${oversLabel(inn)})',
+            '${inningsScore(inn)}  (${oversLabel(inn)})',
             style: text.headlineMedium,
           ),
           Text(
@@ -289,6 +297,91 @@ class _InningsCard extends StatelessWidget {
   }
 }
 
+/// Every innings total, the close of play each day, and substitutions.
+class _Summary extends StatelessWidget {
+  const _Summary({required this.match, required this.innings});
+
+  final Match match;
+  final List<InningsState> innings;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = match.state;
+    final setup = match.setup;
+    final nameOf = nameLookup(setup);
+    final colors = context.colors;
+    final bpo = setup.rules.ballsPerOver;
+    String overs(int balls) =>
+        bpo == 5 ? '$balls balls' : '${formatOvers(balls, bpo)} ov';
+    Widget panel(List<Widget> children) => GlassPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
+      ),
+    );
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+      children: [
+        panel([
+          Text(
+            [setup.rules.name, ?dayLabel(state)].join(' · '),
+            style: TextStyle(color: colors.muted),
+          ),
+          const SizedBox(height: 6),
+          for (final inn in innings)
+            _Line(
+              key: Key('total-${inn.number}'),
+              inningsLabel(match, inn),
+              inningsScore(inn),
+              detail: inn.endReason == InningsEndReason.forfeited
+                  ? null
+                  : oversLabel(inn),
+              bold: true,
+            ),
+        ]),
+        if (state.closeOfPlay.isNotEmpty) ...[
+          const _Heading('Close of play'),
+          panel([
+            for (final s in state.closeOfPlay)
+              _Line(
+                'Day ${s.day}',
+                '${setup.team(s.battingTeamId).name} ${s.runs}/${s.wickets}',
+                detail: s.inningsClosed ? 'innings ended' : overs(s.legalBalls),
+              ),
+          ]),
+        ],
+        if (state.stoppages.any((s) => s.kind != StoppageKind.stumps)) ...[
+          const _Heading('Breaks in play'),
+          panel([
+            for (final s in state.stoppages)
+              if (s.kind != StoppageKind.stumps)
+                _Line(
+                  stoppageName(s.kind),
+                  '${s.runs}/${s.wickets}',
+                  detail: 'Day ${s.day}, ${overs(s.legalBalls)}',
+                ),
+          ]),
+        ],
+        if (state.substitutions.isNotEmpty) ...[
+          const _Heading('Substitutes'),
+          panel([
+            for (final sub in state.substitutions)
+              _Line(
+                '${nameOf(sub.inPlayerId)} for ${nameOf(sub.outPlayerId)}',
+                '',
+                detail: switch (sub.reason) {
+                  SubstitutionReason.concussion => 'concussion',
+                  SubstitutionReason.impactPlayer => 'impact player',
+                  SubstitutionReason.other => 'replacement',
+                },
+              ),
+          ]),
+        ],
+      ],
+    );
+  }
+}
+
 class _Heading extends StatelessWidget {
   const _Heading(this.label);
 
@@ -308,7 +401,13 @@ class _Heading extends StatelessWidget {
 }
 
 class _Line extends StatelessWidget {
-  const _Line(this.label, this.value, {this.detail, this.bold = false});
+  const _Line(
+    this.label,
+    this.value, {
+    super.key,
+    this.detail,
+    this.bold = false,
+  });
 
   final String label;
   final String value;
@@ -322,25 +421,36 @@ class _Line extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          Flexible(
-            flex: detail == null ? 1 : 0,
-            fit: FlexFit.tight,
-            child: Text(
-              label,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontWeight: weight),
+          // Label and detail share the room on the left, the label getting
+          // more when both are long; the value stays on the right.
+          Expanded(
+            child: Row(
+              children: [
+                Flexible(
+                  flex: 3,
+                  child: Text(
+                    label,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontWeight: weight),
+                  ),
+                ),
+                if (detail != null) ...[
+                  const SizedBox(width: 8),
+                  Flexible(
+                    flex: 2,
+                    child: Text(
+                      detail!,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: context.colors.muted,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
-          if (detail != null) ...[
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                detail!,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: context.colors.muted, fontSize: 13),
-              ),
-            ),
-          ],
           const SizedBox(width: 8),
           Text(
             value,
