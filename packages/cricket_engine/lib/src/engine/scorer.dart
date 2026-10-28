@@ -45,6 +45,10 @@ final class Scorer {
   /// Events applied so far; the log position of the event being applied.
   int _applied = 0;
 
+  int _day = 1;
+  final List<StoppageRecord> _stoppages = [];
+  StoppageKind? _stoppedFor;
+
   MatchRules get rules => setup.rules;
 
   // ---------------------------------------------------------------- events
@@ -61,7 +65,8 @@ final class Scorer {
         event is! Drawn &&
         event is! Abandoned &&
         event is! PenaltyRuns &&
-        event is! Substitute) {
+        event is! Substitute &&
+        event is! Stoppage) {
       throw const IllegalEventException(
         IllegalEventCode.followOnPending,
         'Decide whether to enforce the follow-on first.',
@@ -110,8 +115,11 @@ final class Scorer {
         _overExtended();
       case Abandoned():
         _endMatch(const NoResult());
+      case Stoppage():
+        _stoppage(event.kind);
       case Delivery():
         _delivery(event);
+        _stoppedFor = null;
     }
     _applied++;
   }
@@ -367,6 +375,27 @@ final class Scorer {
           : regular[0].battingTeamId,
       ballLimit: rules.ballsPerInnings,
     );
+  }
+
+  void _stoppage(StoppageKind kind) {
+    // At an innings break the score is the innings just finished.
+    final inn = _current.openersSet || _innings.length == 1
+        ? _current
+        : _innings[_innings.length - 2];
+    _stoppages.add(
+      StoppageRecord(
+        kind: kind,
+        day: _day,
+        inningsNumber: inn.number,
+        battingTeamId: inn.battingTeamId,
+        runs: inn.runs,
+        wickets: inn.wickets,
+        legalBalls: inn.legalBalls,
+        inningsClosed: inn.end != null,
+      ),
+    );
+    _stoppedFor = kind;
+    if (kind == StoppageKind.stumps) _day++;
   }
 
   void _endMatch(MatchResult result) {
@@ -1286,6 +1315,9 @@ final class Scorer {
       pending: _pending(),
       result: _result,
       substitutions: List.unmodifiable(_substitutions),
+      day: _day,
+      stoppages: List.unmodifiable(_stoppages),
+      stoppedFor: _result == null ? _stoppedFor : null,
     );
   }
 

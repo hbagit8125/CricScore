@@ -142,7 +142,12 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
                         padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
                         child: Stack(
                           children: [
-                            ScoreHeader(innings: inn, setup: setup),
+                            ScoreHeader(
+                              innings: inn,
+                              setup: setup,
+                              day: dayLabel(state),
+                              lead: leadLine(state),
+                            ),
                             if (_burst case final b?)
                               Positioned.fill(
                                 child: IgnorePointer(
@@ -157,6 +162,17 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
+                      if (state.stoppedFor case final k?) ...[
+                        _StoppedBanner(
+                          title: k == StoppageKind.stumps
+                              ? 'Stumps, day ${state.day - 1}'
+                              : stoppageName(k),
+                          detail: k == StoppageKind.stumps
+                              ? 'Day ${state.day} starts with the next ball'
+                              : 'Play resumes with the next ball',
+                        ),
+                        const SizedBox(height: 8),
+                      ],
                       if (_cameIn case final c?) ...[
                         _CameInBanner(
                           name: nameOf(c.question.suggested),
@@ -242,16 +258,27 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
         children: [
           if (previous != null) ...[
             Text(
-              'Innings break',
+              match.setup.rules.isTwoInnings &&
+                      previous.battingTeamId ==
+                          state.currentInnings!.battingTeamId
+                  ? 'Follow-on'
+                  : 'Innings break',
               textAlign: TextAlign.center,
               style: text.titleLarge,
             ),
             Text(
               '${match.setup.team(previous.battingTeamId).name} '
-              '${previous.runs}/${previous.wickets} (${oversLabel(previous)})',
+              '${inningsScore(previous)} (${oversLabel(previous)})',
               textAlign: TextAlign.center,
               style: TextStyle(color: colors.muted),
             ),
+            if (leadLine(state) case final line?)
+              Text(
+                '${match.setup.team(state.currentInnings!.battingTeamId).name}: '
+                '${line.toLowerCase()}',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: colors.extras),
+              ),
             if (chaseLine(state.currentInnings!) case final line?)
               Text(
                 '${match.setup.team(state.currentInnings!.battingTeamId).name}: '
@@ -273,10 +300,23 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
               ChooseBatter() => 'Choose next batter',
             }),
           ),
-          TextButton(
-            key: const Key('undoPending'),
-            onPressed: match.canUndo ? _undo : null,
-            child: const Text('Undo last ball'),
+          Row(
+            children: [
+              Expanded(
+                child: TextButton(
+                  key: const Key('undoPending'),
+                  onPressed: match.canUndo ? _undo : null,
+                  child: const Text('Undo last ball'),
+                ),
+              ),
+              Expanded(
+                child: TextButton(
+                  key: const Key('morePending'),
+                  onPressed: () => _more(match),
+                  child: const Text('More'),
+                ),
+              ),
+            ],
           ),
         ],
       );
@@ -356,7 +396,15 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
   }
 
   Future<void> _more(Match match) async {
-    final inn = match.state.currentInnings!;
+    final state = match.state;
+    final inn = state.currentInnings!;
+    final rules = match.setup.rules;
+    final twoInnings = rules.isTwoInnings;
+    final started = inn.batters.isNotEmpty;
+    final followOnPending = state.pending.any((q) => q is ChooseFollowOn);
+    final regularClosed = state.innings
+        .where((i) => i.kind == InningsKind.regular && i.isClosed)
+        .length;
     final bothIn = inn.strikerId != null && inn.nonStrikerId != null;
     final midOver = inn.currentOver?.deliveries.isNotEmpty ?? false;
     final legalThisOver =
@@ -375,11 +423,29 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
           if (midOver && inn.bowlerId != null) MoreAction.changeBowler,
           if (legalThisOver > 0) MoreAction.overCalledEarly,
           MoreAction.penalty,
-          if (match.setup.rules.ballsPerInnings != null)
+          MoreAction.substitute,
+          MoreAction.stoppage,
+          if (rules.ballsPerInnings != null && !inn.isClosed)
             MoreAction.revisedTarget,
+          if (started && !inn.isClosed) MoreAction.declare,
+          if (!started && !inn.isClosed && !followOnPending) MoreAction.forfeit,
+          if (regularClosed < 2) MoreAction.followOnMargin,
           MoreAction.renamePlayer,
-          if (!inn.isClosed) MoreAction.endInnings,
+          if (started && !inn.isClosed) MoreAction.endInnings,
+          MoreAction.draw,
           MoreAction.abandon,
+        },
+        visible: {
+          for (final a in MoreAction.values)
+            if (switch (a) {
+              MoreAction.declare ||
+              MoreAction.forfeit ||
+              MoreAction.followOnMargin ||
+              MoreAction.draw => twoInnings,
+              MoreAction.revisedTarget => rules.ballsPerInnings != null,
+              _ => true,
+            })
+              a,
         },
       ),
     );
@@ -491,6 +557,44 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
         )) {
           await _apply(const EndInnings());
         }
+      case MoreAction.substitute:
+        await _substitute(match);
+      case MoreAction.stoppage:
+        await _stoppage(match);
+      case MoreAction.declare:
+        if (await _confirm(
+          'Declare?',
+          '${setup.team(inn.battingTeamId).name} declare at '
+              '${inn.runs}/${inn.wickets}.',
+          'Declare',
+        )) {
+          await _apply(const Declare());
+        }
+      case MoreAction.forfeit:
+        if (await _confirm(
+          'Forfeit this innings?',
+          '${setup.team(inn.battingTeamId).name} give up this innings '
+              'without batting (Law 15).',
+          'Forfeit',
+        )) {
+          await _apply(const Forfeit());
+        }
+      case MoreAction.followOnMargin:
+        final runs = await _number(
+          title: 'Follow-on margin',
+          label: 'Runs',
+          helper: 'Set for the days left after time is lost (Law 14)',
+          initial: rules.followOnMargin,
+        );
+        if (runs != null) await _apply(FollowOnMarginSet(runs));
+      case MoreAction.draw:
+        if (await _confirm(
+          'Match drawn?',
+          'Time has run out without a result.',
+          'Drawn',
+        )) {
+          await _apply(const Drawn());
+        }
       case MoreAction.abandon:
         if (await _confirm(
           'Abandon the match?',
@@ -520,6 +624,214 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
     } on IllegalEventException catch (e) {
       _toast(e.message);
     }
+  }
+
+  /// Records a break in play. After stumps on the last scheduled day, asks
+  /// whether the match is drawn.
+  Future<void> _stoppage(Match match) async {
+    final rules = match.setup.rules;
+    final days = rules.isTwoInnings || rules.days != null;
+    final kinds = [
+      StoppageKind.drinks,
+      if (days) ...[StoppageKind.lunch, StoppageKind.tea],
+      StoppageKind.stumps,
+      StoppageKind.weather,
+      StoppageKind.other,
+    ];
+    final day = match.state.day;
+    final kind = await showScoringSheet<StoppageKind>(
+      context,
+      ChoiceSheet<StoppageKind>(
+        title: 'Break in play',
+        subtitle: 'Play resumes with the next ball',
+        choices: [
+          for (final k in kinds)
+            (
+              value: k,
+              label: stoppageName(k),
+              detail: switch (k) {
+                StoppageKind.stumps =>
+                  days ? 'End of day $day' : 'Carry on another day',
+                StoppageKind.other => 'Any other interruption',
+                _ => null,
+              },
+              key: Key('stop-${k.name}'),
+            ),
+        ],
+      ),
+    );
+    if (kind == null || !await _apply(Stoppage(kind)) || !mounted) return;
+    final scheduled = rules.days;
+    if (kind == StoppageKind.stumps &&
+        rules.isTwoInnings &&
+        scheduled != null &&
+        day >= scheduled &&
+        await _confirm(
+          'That was the last day',
+          'Record the match as drawn?',
+          'Drawn',
+        )) {
+      await _apply(const Drawn());
+    }
+  }
+
+  /// Replaces a player for the rest of the match, with a substitute named
+  /// earlier or someone new.
+  Future<void> _substitute(Match match) async {
+    final state = match.state;
+    final setup = match.setup;
+    final nameOf = nameLookup(setup);
+    final inn = state.currentInnings!;
+    final teamId = await showScoringSheet<String>(
+      context,
+      ChoiceSheet<String>(
+        title: 'Substitute for which side?',
+        choices: [
+          for (final t in [setup.teamA, setup.teamB])
+            (value: t.id, label: t.name, detail: null, key: Key('sub-${t.id}')),
+        ],
+      ),
+    );
+    if (teamId == null || !mounted) return;
+    // Batters at the crease retire first; the bowler finishes the over.
+    final busy = inn.isClosed
+        ? const <String>{}
+        : {?inn.strikerId, ?inn.nonStrikerId, ?inn.bowlerId};
+    final out = await showScoringSheet<String>(
+      context,
+      ChoiceSheet<String>(
+        title: 'Who is replaced?',
+        subtitle: 'They take no further part in the match',
+        choices: [
+          for (final id in playingIds(state, teamId))
+            if (!busy.contains(id))
+              (
+                value: id,
+                label: nameOf(id),
+                detail: null,
+                key: Key('subOut-$id'),
+              ),
+        ],
+      ),
+    );
+    if (out == null || !mounted) return;
+    const newPlayer = '';
+    var inId = await showScoringSheet<String>(
+      context,
+      ChoiceSheet<String>(
+        title: 'Who comes on?',
+        choices: [
+          for (final id in unusedSubstitutes(state, teamId))
+            (value: id, label: nameOf(id), detail: null, key: Key('subIn-$id')),
+          (
+            value: newPlayer,
+            label: 'New player',
+            detail: 'Type their name',
+            key: const Key('subIn-new'),
+          ),
+        ],
+      ),
+    );
+    if (inId == null || !mounted) return;
+    final reason = await showScoringSheet<SubstitutionReason>(
+      context,
+      const ChoiceSheet<SubstitutionReason>(
+        title: 'Reason',
+        choices: [
+          (
+            value: SubstitutionReason.concussion,
+            label: 'Concussion replacement',
+            detail: null,
+            key: Key('subReason-concussion'),
+          ),
+          (
+            value: SubstitutionReason.impactPlayer,
+            label: 'Impact player',
+            detail: null,
+            key: Key('subReason-impactPlayer'),
+          ),
+          (
+            value: SubstitutionReason.other,
+            label: 'Other replacement',
+            detail: 'Allowed by the playing conditions',
+            key: Key('subReason-other'),
+          ),
+        ],
+      ),
+    );
+    if (reason == null || !mounted) return;
+    if (inId == newPlayer) {
+      final name = await _text('Name of the substitute');
+      if (name == null || !mounted) return;
+      inId = await _controller.addSubstitute(teamId, name);
+    }
+    await _apply(
+      Substitute(outPlayerId: out, inPlayerId: inId, reason: reason),
+    );
+  }
+
+  Future<String?> _text(String title) async {
+    final controller = TextEditingController();
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          key: const Key('textInput'),
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          onSubmitted: (v) => Navigator.pop(context, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('saveText'),
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    return value == null || value.trim().isEmpty ? null : value.trim();
+  }
+
+  Future<int?> _number({
+    required String title,
+    required String label,
+    String? helper,
+    int? initial,
+  }) async {
+    final controller = TextEditingController(text: initial?.toString() ?? '');
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          key: const Key('numberInput'),
+          controller: controller,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(labelText: label, helperText: helper),
+          onSubmitted: (v) => Navigator.pop(context, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('saveNumber'),
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    return int.tryParse(value?.trim() ?? '');
   }
 
   Future<bool> _confirm(String title, String message, String action) async {
@@ -789,7 +1101,8 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
               inn.overs.isNotEmpty &&
               inn.overs.last.isComplete &&
               match.events.isNotEmpty &&
-              match.events.last is! OverCalledEarly,
+              match.events.last is! OverCalledEarly &&
+              match.events.last is! Stoppage,
         ),
       ),
       final ChooseFollowOn q => _followOn(q, setup),
@@ -809,9 +1122,18 @@ class _ScoringScreenState extends ConsumerState<ScoringScreen> {
     final next = all.last;
     final setup = match.setup;
     return [
-      if (next.kind == InningsKind.superOver) 'Super over' else 'Innings break',
+      switch (next) {
+        InningsState(kind: InningsKind.superOver) => 'Super over',
+        _
+            when setup.rules.isTwoInnings &&
+                next.battingTeamId == previous.battingTeamId =>
+          'Follow-on',
+        _ => 'Innings break',
+      },
       '${setup.team(previous.battingTeamId).name} '
-          '${previous.runs}/${previous.wickets} (${oversLabel(previous)})',
+          '${inningsScore(previous)} (${oversLabel(previous)})',
+      if (leadLine(match.state) case final line?)
+        '${setup.team(next.battingTeamId).name} ${line.toLowerCase()}',
       if (chaseLine(next) case final line?)
         '${setup.team(next.battingTeamId).name} ${line.toLowerCase()}',
     ].join(' · ');
@@ -871,6 +1193,48 @@ class _CameInBanner extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(child: Text('$name comes in')),
           TextButton(onPressed: onChange, child: const Text('Change')),
+        ],
+      ),
+    );
+  }
+}
+
+/// Play is stopped: lunch, tea, stumps or rain.
+class _StoppedBanner extends StatelessWidget {
+  const _StoppedBanner({required this.title, required this.detail});
+
+  final String title;
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      key: const Key('stopped'),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: colors.extras.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.pause_circle_outline, size: 20, color: colors.extras),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                Text(
+                  detail,
+                  style: TextStyle(color: colors.muted, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

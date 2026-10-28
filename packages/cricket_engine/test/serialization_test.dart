@@ -68,7 +68,10 @@ void main() {
         dismissal: Dismissal(kind: DismissalKind.stumped, batterId: 'A1'),
       ),
     ];
-    for (final e in events) {
+    for (final e in [
+      ...events,
+      for (final kind in StoppageKind.values) Stoppage(kind),
+    ]) {
       expect(roundTrip(MatchJson.eventToJson(e), MatchJson.eventFromJson), e);
     }
   });
@@ -81,6 +84,7 @@ void main() {
     for (final rules in [
       ...MatchRules.presets,
       ...MatchRules.multiDayPresets,
+      MatchRules.multiDay(days: 2, playersPerSide: 9),
       MatchRules.custom(overs: 6, playersPerSide: 6).copyWith(
         retireAtRuns: 20,
         lastBatterCanBatAlone: true,

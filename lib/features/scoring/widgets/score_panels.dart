@@ -19,10 +19,22 @@ NameOf nameLookup(MatchSetup setup) {
 /// Team, score and overs in large condensed numerals, with the chase or
 /// run rate underneath.
 class ScoreHeader extends StatelessWidget {
-  const ScoreHeader({super.key, required this.innings, required this.setup});
+  const ScoreHeader({
+    super.key,
+    required this.innings,
+    required this.setup,
+    this.day,
+    this.lead,
+  });
 
   final InningsState innings;
   final MatchSetup setup;
+
+  /// "Day 2 of 5", for matches played over days.
+  final String? day;
+
+  /// "Lead by 45", in two-innings matches.
+  final String? lead;
 
   @override
   Widget build(BuildContext context) {
@@ -33,6 +45,7 @@ class ScoreHeader extends StatelessWidget {
     final rrr = inn.requiredRunRate;
     final details = [
       ?chase,
+      ?lead,
       if (rrr != null) 'RRR ${rrr.toStringAsFixed(2)}',
       'CRR ${inn.runRate.toStringAsFixed(2)}',
     ];
@@ -41,11 +54,15 @@ class ScoreHeader extends StatelessWidget {
       children: [
         Row(
           children: [
-            Text(
-              setup.team(inn.battingTeamId).name.toUpperCase(),
-              style: text.labelLarge?.copyWith(
-                color: colors.muted,
-                letterSpacing: 1.2,
+            Flexible(
+              child: Text(
+                setup.team(inn.battingTeamId).name.toUpperCase(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: text.labelLarge?.copyWith(
+                  color: colors.muted,
+                  letterSpacing: 1.2,
+                ),
               ),
             ),
             if (inn.kind == InningsKind.superOver) ...[
@@ -55,6 +72,14 @@ class ScoreHeader extends StatelessWidget {
             if (inn.freeHitNext) ...[
               const SizedBox(width: 8),
               _Tag('Free hit', color: colors.extras),
+            ],
+            if (day != null) ...[
+              const Spacer(),
+              Text(
+                day!,
+                key: const Key('day'),
+                style: text.labelLarge?.copyWith(color: colors.muted),
+              ),
             ],
           ],
         ),
@@ -126,7 +151,7 @@ class ScoreHeader extends StatelessWidget {
         Text(
           details.join(' · '),
           style: text.bodyMedium?.copyWith(
-            color: chase != null ? colors.extras : colors.muted,
+            color: chase != null || lead != null ? colors.extras : colors.muted,
           ),
         ),
       ],

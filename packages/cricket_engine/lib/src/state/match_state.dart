@@ -12,6 +12,9 @@ final class MatchState {
     required this.pending,
     required this.result,
     this.substitutions = const [],
+    this.day = 1,
+    this.stoppages = const [],
+    this.stoppedFor,
   });
 
   final MatchSetup setup;
@@ -27,6 +30,20 @@ final class MatchState {
   /// Substitutions made so far, in order.
   final List<Substitute> substitutions;
 
+  /// Day of play, starting at 1; each stumps starts the next.
+  final int day;
+
+  /// Every stoppage so far, in order.
+  final List<StoppageRecord> stoppages;
+
+  /// Why play is stopped now, or null while play is on. Cleared by the
+  /// next ball.
+  final StoppageKind? stoppedFor;
+
+  /// Close-of-play scores, one per day completed.
+  Iterable<StoppageRecord> get closeOfPlay =>
+      stoppages.where((s) => s.kind == StoppageKind.stumps);
+
   bool get isComplete => result != null;
 
   InningsState? get currentInnings => innings.isEmpty ? null : innings.last;
@@ -37,4 +54,33 @@ final class MatchState {
       pending.isEmpty &&
       currentInnings != null &&
       !currentInnings!.isClosed;
+}
+
+/// A stoppage and the score when it happened.
+final class StoppageRecord {
+  const StoppageRecord({
+    required this.kind,
+    required this.day,
+    required this.inningsNumber,
+    required this.battingTeamId,
+    required this.runs,
+    required this.wickets,
+    required this.legalBalls,
+    required this.inningsClosed,
+  });
+
+  final StoppageKind kind;
+
+  /// The day it happened on.
+  final int day;
+
+  /// [InningsState.number] of the latest innings at the time.
+  final int inningsNumber;
+  final String battingTeamId;
+  final int runs;
+  final int wickets;
+  final int legalBalls;
+
+  /// The stoppage came at the end of an innings, before the next started.
+  final bool inningsClosed;
 }

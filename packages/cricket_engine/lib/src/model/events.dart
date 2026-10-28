@@ -285,6 +285,33 @@ final class Substitute extends MatchEvent {
   int get hashCode => Object.hash(outPlayerId, inPlayerId, reason);
 }
 
+enum StoppageKind {
+  drinks,
+  lunch,
+  tea,
+
+  /// Close of play for the day ("stumps"). The next day starts after it.
+  stumps,
+
+  /// Rain or bad light.
+  weather,
+  other,
+}
+
+/// Play stops for an interval, the close of a day or an interruption
+/// (Laws 11 and 12). It resumes with the next ball; nothing else changes.
+final class Stoppage extends MatchEvent {
+  const Stoppage(this.kind);
+
+  final StoppageKind kind;
+
+  @override
+  bool operator ==(Object other) => other is Stoppage && other.kind == kind;
+
+  @override
+  int get hashCode => kind.hashCode;
+}
+
 /// The match is abandoned without a result.
 final class Abandoned extends MatchEvent {
   const Abandoned();

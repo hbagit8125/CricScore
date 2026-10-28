@@ -4,6 +4,7 @@ import 'package:cricket_engine/cricket_engine.dart';
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
+import '../features/scoring/scoring_logic.dart';
 import 'local/app_database.dart';
 
 /// A saved match as shown in lists.
@@ -203,11 +204,23 @@ class MatchRepository {
     final result = state.result;
     if (result != null) return result.describe(match.setup);
     final inn = state.currentInnings;
+    final String score;
     if (inn == null || (inn.legalBalls == 0 && inn.runs == 0)) {
-      return state.innings.length <= 1 ? 'Not started' : 'Innings break';
+      score = state.innings.length <= 1 ? 'Not started' : 'Innings break';
+    } else {
+      final team = match.setup.team(inn.battingTeamId).name;
+      score = [
+        '$team ${inn.runs}/${inn.wickets} (${inn.oversText})',
+        ?leadLine(state)?.toLowerCase(),
+      ].join(' · ');
     }
-    final team = match.setup.team(inn.battingTeamId).name;
-    return '$team ${inn.runs}/${inn.wickets} (${inn.oversText})';
+    return [
+      if (state.stoppedFor case final k?)
+        k == StoppageKind.stumps
+            ? 'Stumps, day ${state.day - 1}'
+            : stoppageName(k),
+      score,
+    ].join(' · ');
   }
 
   static Map<String, Object?> _decode(String s) =>

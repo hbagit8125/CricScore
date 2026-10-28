@@ -2,4 +2,6 @@
 ///
 /// Stored with every saved match so older matches can be migrated when the
 /// format changes.
-const int engineSchemaVersion = 1;
+///
+/// 2: days of play and stoppages (lunch, tea, stumps, rain).
+const int engineSchemaVersion = 2;

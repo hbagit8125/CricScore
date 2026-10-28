@@ -139,6 +139,7 @@ final class MatchRules {
     this.tieBreak = TieBreak.none,
     this.inningsPerSide = 1,
     this.followOnMargin,
+    this.days,
   });
 
   /// A starting point for local cricket: any overs and team size.
@@ -153,6 +154,18 @@ final class MatchRules {
       ballsPerOver: ballsPerOver,
       ballsPerInnings: overs * ballsPerOver,
       bowlerLimit: const FifthOfInnings(),
+    );
+  }
+
+  /// A two-innings match of any length, such as a two-day club game, with
+  /// the follow-on margin Law 14.1.1 gives for that many days.
+  factory MatchRules.multiDay({required int days, int playersPerSide = 11}) {
+    return MatchRules(
+      name: '$days-day',
+      playersPerSide: playersPerSide,
+      inningsPerSide: 2,
+      followOnMargin: followOnMarginForDays(days),
+      days: days,
     );
   }
 
@@ -204,6 +217,7 @@ final class MatchRules {
     name: 'Test',
     inningsPerSide: 2,
     followOnMargin: 200,
+    days: 5,
   );
 
   /// Four-day first-class match: two innings each, follow-on at 150.
@@ -211,6 +225,7 @@ final class MatchRules {
     name: 'First-class',
     inningsPerSide: 2,
     followOnMargin: 150,
+    days: 4,
   );
 
   /// Limited-overs presets offered when creating a match.
@@ -266,6 +281,9 @@ final class MatchRules {
   /// make the other side follow on (Law 14), or null for no follow-on.
   final int? followOnMargin;
 
+  /// Scheduled days of play, or null for a one-day match.
+  final int? days;
+
   bool get isTwoInnings => inningsPerSide == 2;
 
   /// The most wickets that can fall before the innings is all out.
@@ -292,6 +310,7 @@ final class MatchRules {
       if (followOnMargin != null &&
           (inningsPerSide != 2 || followOnMargin! < 1))
         'The follow-on needs a two-innings match and a positive margin.',
+      if (days != null && days! < 1) 'A match needs at least 1 day.',
     ];
   }
 
@@ -315,6 +334,8 @@ final class MatchRules {
     int? inningsPerSide,
     int? followOnMargin,
     bool clearFollowOnMargin = false,
+    int? days,
+    bool clearDays = false,
   }) {
     return MatchRules(
       name: name ?? this.name,
@@ -341,6 +362,7 @@ final class MatchRules {
       followOnMargin: clearFollowOnMargin
           ? null
           : followOnMargin ?? this.followOnMargin,
+      days: clearDays ? null : days ?? this.days,
     );
   }
 }
